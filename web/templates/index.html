@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video to 3D Metric Model - Scanner MVP</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <!-- Three.js and Loaders -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+  <style>
+    /* ── Progress Bar Styles ── */
+    .progress-container {
+      margin-top: 12px;
+      background: rgba(30, 27, 75, 0.6);
+      border-radius: 10px;
+      padding: 14px 16px;
+      border: 1px solid rgba(99, 102, 241, 0.15);
+    }
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .progress-header .stage-label {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #c4b5fd;
+    }
+    .progress-header .percent-label {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #38bdf8;
+      font-variant-numeric: tabular-nums;
+    }
+    .progress-bar-track {
+      width: 100%;
+      height: 14px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 7px;
+      overflow: hidden;
+      position: relative;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 7px;
+      background: linear-gradient(90deg, #6366f1 0%, #38bdf8 50%, #10b981 100%);
+      transition: width 0.4s ease;
+      position: relative;
+    }
+    .progress-bar-fill::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    .progress-message {
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      min-height: 1.2em;
+    }
+    .progress-elapsed {
+      margin-top: 6px;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.4);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .step-indicator.active {
+      animation: pulse-glow 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5); }
+      50% { box-shadow: 0 0 12px 4px rgba(99, 102, 241, 0.3); }
+    }
+
+    .step-sub-progress {
+      display: inline-block;
+      width: 50px;
+      height: 4px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .step-sub-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: #6366f1;
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+
+    /* ── History Projects Modal & Cards ── */
+    .history-card {
+      background: rgba(30, 27, 75, 0.4);
+      border: 1px solid rgba(99, 102, 241, 0.15);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+    .history-card:hover {
+      background: rgba(99, 102, 241, 0.12);
+      border-color: rgba(99, 102, 241, 0.35);
+    }
+    .history-card.active-proj {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+    }
+    .history-title {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #f1f5f9;
+      margin-bottom: 4px;
+    }
+    .history-meta {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Tabs */
+    .tab-nav {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 14px;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 8px 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      color: #38bdf8;
+      border-bottom-color: #38bdf8;
+    }
+
+    /* 3D Viewport styling */
+    #viewport3d {
+      width: 100%;
+      height: 440px;
+      position: relative;
+      background: radial-gradient(circle at center, #1e1b4b 0%, #090817 100%);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    #viewport3d canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <header>
+    <div class="logo-area">
+      <div class="logo-badge">3D SCAN</div>
+      <div>
+        <h1>Reconstructor Métrico 3D (RGB a STL)</h1>
+        <p class="tagline">Calibración fotogramétrica submilimétrica con marcadores AprilTag para ortesis y prototipos</p>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <a href="/api/download-doc-tecnica-pdf" class="btn btn-secondary" target="_blank" style="color: #10b981; font-weight: 600;">
+        📘 Doc. Técnica & Bitácora (PDF)
+      </a>
+      <a href="/api/download-marker-pdf" class="btn btn-secondary" target="_blank">
+        📄 Descargar Patrón A4 (PDF)
+      </a>
+      <button class="btn btn-secondary" onclick="loadProjectsList()">
+        📁 Historial de Escaneos
+      </button>
+    </div>
+  </header>
+
+  <!-- Dashboard Grid -->
+  <div class="dashboard-grid">
+
+    <!-- Left Column: Controls & Pipeline & History -->
+    <div class="left-col">
+
+      <!-- Tabs for Left Column -->
+      <div class="tab-nav">
+        <button id="tabBtnNew" class="tab-btn active" onclick="switchLeftTab('new')">📹 Nuevo Escaneo</button>
+        <button id="tabBtnHistory" class="tab-btn" onclick="switchLeftTab('history')">📁 Historial de Proyectos (<span id="historyCount">0</span>)</button>
+      </div>
+
+      <!-- Tab 1: New Scan Form -->
+      <div id="tabContentNew">
+        <!-- Step 1: Upload Video -->
+        <div class="card">
+          <h2 class="card-title">📹 1. Cargar Video de Escaneo</h2>
+          <div id="dropzone" class="dropzone" onclick="document.getElementById('videoFileInput').click()">
+            <div class="dropzone-icon">📁</div>
+            <p><strong>Arrastra un video aquí</strong> o haz clic para seleccionar</p>
+            <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">Soporta .mp4, .mov (Botella u objeto sobre marcador)</p>
+            <input type="file" id="videoFileInput" accept="video/mp4,video/quicktime,video/avi" style="display: none;" onchange="handleFileSelect(this)">
+          </div>
+          <div id="fileSelectedInfo" style="margin-top: 10px; font-size: 0.85rem; color: #38bdf8; display: none;"></div>
+        </div>
+
+        <!-- Step 2: Settings -->
+        <div class="card">
+          <h2 class="card-title">⚙️ 2. Parámetros de Calibración</h2>
+          <div class="form-group">
+            <label>Tamaño del Marcador (mm)</label>
+            <input type="number" id="markerSize" class="form-control" value="50.0" step="0.5">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label>FPS Extracción</label>
+              <input type="number" id="targetFps" class="form-control" value="4.0" step="0.5">
+            </div>
+            <div class="form-group">
+              <label>Filtro Blur (Var)</label>
+              <input type="number" id="blurVar" class="form-control" value="30.0" step="5">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Profundidad Poisson (Malla)</label>
+            <input type="number" id="poissonDepth" class="form-control" value="8" min="7" max="11">
+          </div>
+
+          <button id="runBtn" class="btn btn-primary" onclick="startProcessing()" disabled>
+            🚀 Iniciar Reconstrucción 3D
+          </button>
+        </div>
+
+        <!-- Pipeline Steps Tracker -->
+        <div class="card">
+          <h2 class="card-title">⚡ Progreso del Pipeline</h2>
+
+          <!-- Global Progress Bar -->
+          <div class="progress-container" id="globalProgressContainer" style="display: none;">
+            <div class="progress-header">
+              <span class="stage-label" id="globalStageLabel">Preparando...</span>
+              <span class="percent-label" id="globalPercentLabel">0%</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="globalProgressFill"></div>
+            </div>
+            <div class="progress-message" id="globalProgressMsg">Subiendo video al servidor...</div>
+            <div class="progress-elapsed" id="globalElapsed">⏱️ 0:00</div>
+          </div>
+
+          <div style="margin-top: 14px;">
+            <div class="pipeline-step">
+              <div id="step-1" class="step-indicator">1</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.85rem;">Extracción & Filtro de Desenfoque
+                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-1-bar"></span></span>
+                </div>
+                <div id="step-1-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <div id="step-2" class="step-indicator">2</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.85rem;">Structure from Motion (COLMAP)
+                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-2-bar"></span></span>
+                </div>
+                <div id="step-2-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <div id="step-3" class="step-indicator">3</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.85rem;">Escalado Métrico (AprilTag)
+                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-3-bar"></span></span>
+                </div>
+                <div id="step-3-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <div id="step-4" class="step-indicator">4</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.85rem;">Generación de Malla STL (Poisson)
+                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-4-bar"></span></span>
+                </div>
+                <div id="step-4-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
+              </div>
+            </div>
+            <div class="pipeline-step">
+              <div id="step-5" class="step-indicator">5</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; font-size: 0.85rem;">Slicing & Medición de Perímetros
+                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-5-bar"></span></span>
+                </div>
+                <div id="step-5-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 14px;">
+            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600;">TERMINAL LOGS</div>
+            <div id="terminal" class="terminal-log">Esperando video para procesar...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Scan History Explorer -->
+      <div id="tabContentHistory" style="display: none;">
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h2 class="card-title" style="margin-bottom: 0;">📁 Escaneos Anteriores</h2>
+            <button class="btn btn-secondary" onclick="loadProjectsList()" style="font-size: 0.75rem; padding: 4px 8px;">🔄 Actualizar</button>
+          </div>
+          <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 12px;">
+            Haz clic en <strong>Ver en Visor</strong> para cargar cualquier modelo STL generado previamente.
+          </p>
+          <div id="projectsListContainer" style="max-height: 550px; overflow-y: auto;">
+            <div style="text-align: center; color: var(--text-secondary); padding: 20px;">Cargando historial...</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: 3D Viewer & Measurements -->
+    <div class="right-col">
+
+      <!-- 3D Viewport Card -->
+      <div class="card viewer-card">
+        <div id="viewport3d"></div>
+
+        <div class="viewer-toolbar">
+          <div class="toolbar-group">
+            <button class="btn btn-secondary" onclick="toggleWireframe()">🕸️ Wireframe</button>
+            <button class="btn btn-secondary" onclick="toggleSlices()">📏 Secciones (Slices)</button>
+            <button class="btn btn-secondary" onclick="toggleAutoRotate()">🔄 Auto-Giro</button>
+            <button class="btn btn-secondary" onclick="resetView()">🎯 Centrar</button>
+          </div>
+          <div class="toolbar-group" id="downloadGroup" style="display: none;">
+            <a id="downloadStlBtn" class="btn btn-secondary" style="color: #10b981; font-weight: 700;">
+              💾 Descargar STL
+            </a>
+          </div>
+        </div>
+
+        <div id="viewer-status" class="viewer-info-overlay">
+          Visor 3D listo. Carga un video o selecciona un proyecto del historial.
+        </div>
+      </div>
+
+      <!-- Measurements & Validation Card -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h2 class="card-title" style="margin-bottom: 0;">📊 3. Reporte de Medidas Extraídas (Slicing)</h2>
+          <span id="volumeBadge" class="badge-tag" style="display: none;">Volumen: -- cm³</span>
+        </div>
+
+        <!-- Ground Truth Caliper Comparator -->
+        <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+          <div style="font-size: 0.8rem; font-weight: 700; color: #818cf8; margin-bottom: 8px; text-transform: uppercase;">
+            🧪 Comparación con Calibre Real (Ground Truth)
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: flex-end;">
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-secondary);">Altura Calibre (mm)</label>
+              <input type="number" id="caliperHeight" class="form-control" placeholder="Ej: 215.0" step="0.1">
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-secondary);">Diámetro Calibre (mm)</label>
+              <input type="number" id="caliperDiam" class="form-control" placeholder="Ej: 64.5" step="0.1">
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; color: var(--text-secondary);">Perímetro Cinta (mm)</label>
+              <input type="number" id="caliperPerim" class="form-control" placeholder="Ej: 202.5" step="0.1">
+            </div>
+            <button class="btn btn-secondary" onclick="compareCaliper()">Calcular Error</button>
+          </div>
+          <div id="caliperResults" style="margin-top: 10px; font-size: 0.85rem; display: none;"></div>
+        </div>
+
+        <!-- Slices Table -->
+        <div style="max-height: 260px; overflow-y: auto;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Altura Z (mm)</th>
+                <th>Perímetro (mm)</th>
+                <th>Área (mm²)</th>
+                <th>Diámetro Eq. (mm)</th>
+                <th>Ancho X (mm)</th>
+                <th>Prof. Y (mm)</th>
+              </tr>
+            </thead>
+            <tbody id="slicesTableBody">
+              <tr>
+                <td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 24px;">
+                  No hay datos aún. Ejecuta el pipeline o carga un proyecto anterior.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let selectedFile = null;
+  let activeScanData = null;
+  let processingStartTime = null;
+  let elapsedInterval = null;
+
+  // ── Three.js Global State ──
+  let scene, camera, renderer, controls;
+  let currentMesh = null;
+  let sliceGroup = null;
+  let gridHelper = null;
+  let isWireframe = false;
+  let showSlices = false;
+  let autoRotate = false;
+
+  const STAGE_NAMES = {
+    1: "Etapa 1/5 · Extracción de Frames",
+    2: "Etapa 2/5 · Structure from Motion",
+    3: "Etapa 3/5 · Escalado Métrico",
+    4: "Etapa 4/5 · Generación de Malla",
+    5: "Etapa 5/5 · Slicing & Mediciones"
+  };
+
+  const STAGE_WEIGHTS = { 1: 20, 2: 40, 3: 5, 4: 25, 5: 10 };
+  const STAGE_OFFSETS = { 1: 0, 2: 20, 3: 60, 4: 65, 5: 90 };
+
+  // ── Initialize Three.js on Page Load ──
+  window.addEventListener('DOMContentLoaded', () => {
+    initThreeViewer();
+    loadProjectsList();
+  });
+
+  function initThreeViewer() {
+    const container = document.getElementById('viewport3d');
+    if (!container) return;
+
+    // Scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0c16);
+    scene.fog = new THREE.FogExp2(0x0a0c16, 0.002);
+
+    // Camera
+    const aspect = container.clientWidth / container.clientHeight;
+    camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 2000);
+    camera.position.set(0, -150, 100);
+    camera.up.set(0, 0, 1); // Z is UP in photogrammetry
+
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+
+    // OrbitControls
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.screenSpacePanning = true;
+    controls.maxDistance = 1000;
+    controls.minDistance = 5;
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight1.position.set(100, -100, 200);
+    scene.add(dirLight1);
+
+    const dirLight2 = new THREE.DirectionalLight(0x6366f1, 0.6);
+    dirLight2.position.set(-100, 100, -100);
+    scene.add(dirLight2);
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x1e1b4b, 0.5);
+    scene.add(hemiLight);
+
+    // Grid Floor (XY plane at Z=0)
+    gridHelper = new THREE.GridHelper(300, 30, 0x6366f1, 0x334155);
+    gridHelper.rotation.x = Math.PI / 2;
+    scene.add(gridHelper);
+
+    // Slice group
+    sliceGroup = new THREE.Group();
+    scene.add(sliceGroup);
+
+    // Resize listener
+    window.addEventListener('resize', onWindowResize);
+
+    // Animation Loop
+    animate();
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (controls) {
+      if (autoRotate && currentMesh) {
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 2.0;
+      } else {
+        controls.autoRotate = false;
+      }
+      controls.update();
+    }
+    if (renderer && scene && camera) {
+      renderer.render(scene, camera);
+    }
+  }
+
+  function onWindowResize() {
+    const container = document.getElementById('viewport3d');
+    if (!container || !camera || !renderer) return;
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  }
+
+  function loadSTLModel(stlUrl, measurements) {
+    const statusEl = document.getElementById('viewer-status');
+    statusEl.innerHTML = '⏳ Cargando modelo STL en el visor...';
+
+    const loader = new THREE.STLLoader();
+    loader.load(
+      stlUrl,
+      function (geometry) {
+        if (currentMesh) {
+          scene.remove(currentMesh);
+          currentMesh.geometry.dispose();
+          currentMesh.material.dispose();
+          currentMesh = null;
+        }
+
+        // Clean & compute normals
+        geometry.computeVertexNormals();
+        geometry.center();
+
+        // Calculate bounding box
+        geometry.computeBoundingBox();
+        const bbox = geometry.boundingBox;
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+
+        // Place base on grid (Z=0)
+        geometry.translate(0, 0, -bbox.min.z);
+
+        // Material: Sleek photogrammetric clay/metallic look
+        const material = new THREE.MeshStandardMaterial({
+          color: 0xe2e8f0,
+          roughness: 0.35,
+          metalness: 0.15,
+          wireframe: isWireframe,
+          side: THREE.DoubleSide
+        });
+
+        currentMesh = new THREE.Mesh(geometry, material);
+        scene.add(currentMesh);
+
+        // Build slice contours if measurements available
+        buildSliceVisuals(measurements, geometry);
+
+        // Frame camera to object
+        const maxDim = Math.max(size.x, size.y, size.z, 50);
+        camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
+        controls.target.set(0, 0, size.z / 2);
+        controls.update();
+
+        statusEl.innerHTML = `✅ <strong>Modelo STL Cargado</strong> | Dimensiones: ${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm | Vértices: ${geometry.attributes.position.count.toLocaleString()}`;
+      },
+      function (xhr) {
+        if (xhr.lengthComputable) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          statusEl.innerHTML = `⏳ Descargando STL: ${pct}%...`;
+        }
+      },
+      function (err) {
+        console.error("Error cargando STL:", err);
+        statusEl.innerHTML = `❌ Error al cargar modelo STL en el visor.`;
+      }
+    );
+  }
+
+  function buildSliceVisuals(measurements, geometry) {
+    // Clear previous slices
+    while (sliceGroup.children.length > 0) {
+      const obj = sliceGroup.children[0];
+      sliceGroup.remove(obj);
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    }
+
+    if (!measurements || !measurements.slices) return;
+
+    // Create colored ring markers at each slice height
+    measurements.slices.forEach((s) => {
+      const radius = (s.equivalent_diameter_mm || 30) / 2.0;
+      const ringGeo = new THREE.RingGeometry(radius - 0.5, radius + 0.5, 32);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.set(0, 0, s.height_z_mm);
+      sliceGroup.add(ring);
+    });
+
+    sliceGroup.visible = showSlices;
+  }
+
+  function toggleWireframe() {
+    isWireframe = !isWireframe;
+    if (currentMesh && currentMesh.material) {
+      currentMesh.material.wireframe = isWireframe;
+    }
+  }
+
+  function toggleSlices() {
+    showSlices = !showSlices;
+    if (sliceGroup) {
+      sliceGroup.visible = showSlices;
+    }
+  }
+
+  function toggleAutoRotate() {
+    autoRotate = !autoRotate;
+  }
+
+  function resetView() {
+    if (!currentMesh) return;
+    currentMesh.geometry.computeBoundingBox();
+    const size = new THREE.Vector3();
+    currentMesh.geometry.boundingBox.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z, 50);
+    camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
+    controls.target.set(0, 0, size.z / 2);
+    controls.update();
+  }
+
+  // ── Tabs Switching ──
+  function switchLeftTab(tab) {
+    document.getElementById('tabBtnNew').classList.toggle('active', tab === 'new');
+    document.getElementById('tabBtnHistory').classList.toggle('active', tab === 'history');
+    document.getElementById('tabContentNew').style.display = tab === 'new' ? 'block' : 'none';
+    document.getElementById('tabContentHistory').style.display = tab === 'history' ? 'block' : 'none';
+
+    if (tab === 'history') {
+      loadProjectsList();
+    }
+  }
+
+  // ── Load Projects History ──
+  async function loadProjectsList() {
+    const container = document.getElementById('projectsListContainer');
+    try {
+      const res = await fetch('/api/projects');
+      const data = await res.json();
+
+      if (!data.success || !data.projects || data.projects.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">No hay escaneos anteriores en el historial.</div>';
+        document.getElementById('historyCount').innerText = '0';
+        return;
+      }
+
+      document.getElementById('historyCount').innerText = data.projects.length;
+      let html = '';
+
+      data.projects.forEach(p => {
+        const hasStl = p.has_stl;
+        const stlUrl = `/api/download-stl?path=${encodeURIComponent(p.stl_path)}`;
+        const dims = p.dimensions_mm ? `${p.dimensions_mm.width_x?.toFixed(0) || 0}x${p.dimensions_mm.depth_y?.toFixed(0) || 0}x${p.dimensions_mm.height_z?.toFixed(0) || 0} mm` : '--';
+
+        html += `
+          <div class="history-card" id="card-${p.scan_id}">
+            <div style="flex: 1; min-width: 0; padding-right: 8px;">
+              <div class="history-title">📦 ${p.scan_id}</div>
+              <div class="history-meta">
+                <span>🕒 ${p.created_at}</span>
+                <span>📷 ${p.cameras || 0} cámaras</span>
+                <span>✨ ${p.points || 0} pts</span>
+                <span>📐 ${dims}</span>
+                <span>💾 ${p.stl_size_kb || 0} KB</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              ${hasStl ? `
+                <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 5px 8px; color: #38bdf8;" onclick="loadPastProject('${p.scan_id}')">
+                  👁️ Ver en Visor
+                </button>
+                <a href="${stlUrl}" class="btn btn-secondary" style="font-size: 0.75rem; padding: 5px 8px; color: #10b981;" download>
+                  💾 STL
+                </a>
+              ` : '<span style="font-size: 0.75rem; color: #f59e0b;">Sin STL</span>'}
+              <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 5px 8px; color: #ef4444;" onclick="deleteProject('${p.scan_id}')">
+                🗑️
+              </button>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+
+    } catch (err) {
+      console.error(err);
+      container.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 12px;">Error al cargar historial: ${err.message}</div>`;
+    }
+  }
+
+  async function loadPastProject(scanId) {
+    try {
+      const res = await fetch(`/api/project/${scanId}`);
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(`Error: ${data.error || 'No se pudo cargar el proyecto'}`);
+        return;
+      }
+
+      activeScanData = data;
+
+      // Highlight active card
+      document.querySelectorAll('.history-card').forEach(c => c.classList.remove('active-proj'));
+      const activeCard = document.getElementById(`card-${scanId}`);
+      if (activeCard) activeCard.classList.add('active-proj');
+
+      // Load STL in Three.js
+      if (data.stl_model_path) {
+        const stlUrl = `/api/download-stl?path=${encodeURIComponent(data.stl_model_path)}`;
+        loadSTLModel(stlUrl, data.measurements);
+
+        // Update download button
+        const dlBtn = document.getElementById('downloadStlBtn');
+        dlBtn.href = stlUrl;
+        document.getElementById('downloadGroup').style.display = 'flex';
+      }
+
+      // Populate measurements table
+      populateTable(data.measurements);
+
+      // Volume badge
+      if (data.summary_report && data.summary_report.mesh_stats) {
+        const volBadge = document.getElementById('volumeBadge');
+        volBadge.innerText = `Volumen: ${data.summary_report.mesh_stats.volume_cm3.toFixed(1)} cm³ | Altura: ${data.summary_report.mesh_dimensions_mm?.height_z?.toFixed(1) || '--'} mm`;
+        volBadge.style.display = 'inline-block';
+      }
+
+    } catch (err) {
+      alert(`Error al abrir proyecto: ${err.message}`);
+    }
+  }
+
+  async function deleteProject(scanId) {
+    if (!confirm(`¿Estás seguro de eliminar el escaneo ${scanId}?`)) return;
+    try {
+      const res = await fetch(`/api/project/${scanId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        loadProjectsList();
+      } else {
+        alert(`Error al eliminar: ${data.error}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    }
+  }
+
+  // ── Drag & Drop Video Handling ──
+  function handleFileSelect(input) {
+    if (input.files && input.files[0]) {
+      selectedFile = input.files[0];
+      const infoEl = document.getElementById('fileSelectedInfo');
+      infoEl.innerText = `✅ Archivo: ${selectedFile.name} (${(selectedFile.size / (1024*1024)).toFixed(1)} MB)`;
+      infoEl.style.display = 'block';
+      document.getElementById('runBtn').disabled = false;
+    }
+  }
+
+  const dropzone = document.getElementById('dropzone');
+  if (dropzone) {
+    ['dragenter', 'dragover'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+      dropzone.addEventListener(name, (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); });
+    });
+    dropzone.addEventListener('drop', (e) => {
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        selectedFile = e.dataTransfer.files[0];
+        const infoEl = document.getElementById('fileSelectedInfo');
+        infoEl.innerText = `✅ Archivo: ${selectedFile.name} (${(selectedFile.size / (1024*1024)).toFixed(1)} MB)`;
+        infoEl.style.display = 'block';
+        document.getElementById('runBtn').disabled = false;
+      }
+    });
+  }
+
+  function logTerminal(msg) {
+    const term = document.getElementById('terminal');
+    if (term) {
+      term.innerText += '\n' + msg;
+      term.scrollTop = term.scrollHeight;
+    }
+  }
+
+  function setStepStatus(stepNum, status, desc) {
+    const ind = document.getElementById(`step-${stepNum}`);
+    const descEl = document.getElementById(`step-${stepNum}-desc`);
+    if (desc && descEl) descEl.innerText = desc;
+    if (ind) {
+      ind.className = 'step-indicator';
+      if (status === 'active') ind.classList.add('active');
+      else if (status === 'done') ind.classList.add('done');
+    }
+  }
+
+  function setStepSubProgress(stepNum, percent) {
+    const bar = document.getElementById(`step-${stepNum}-bar`);
+    if (bar) bar.style.width = percent + '%';
+  }
+
+  function updateGlobalProgress(stage, stagePercent, message) {
+    const container = document.getElementById('globalProgressContainer');
+    if (!container) return;
+    container.style.display = 'block';
+
+    const offset = STAGE_OFFSETS[stage] || 0;
+    const weight = STAGE_WEIGHTS[stage] || 10;
+    const globalPercent = Math.min(100, Math.round(offset + (stagePercent / 100) * weight));
+
+    document.getElementById('globalPercentLabel').innerText = globalPercent + '%';
+    document.getElementById('globalProgressFill').style.width = globalPercent + '%';
+    document.getElementById('globalStageLabel').innerText = STAGE_NAMES[stage] || 'Procesando...';
+    document.getElementById('globalProgressMsg').innerText = message;
+  }
+
+  function startElapsedTimer() {
+    processingStartTime = Date.now();
+    const elapsedEl = document.getElementById('globalElapsed');
+    if (elapsedInterval) clearInterval(elapsedInterval);
+    elapsedInterval = setInterval(() => {
+      const sec = Math.floor((Date.now() - processingStartTime) / 1000);
+      const min = Math.floor(sec / 60);
+      const s = sec % 60;
+      elapsedEl.innerText = `⏱️ ${min}:${s.toString().padStart(2, '0')}`;
+    }, 500);
+  }
+
+  function stopElapsedTimer() {
+    if (elapsedInterval) {
+      clearInterval(elapsedInterval);
+      elapsedInterval = null;
+    }
+  }
+
+  function resetAllSteps() {
+    for (let i = 1; i <= 5; i++) {
+      setStepStatus(i, '', 'En espera...');
+      setStepSubProgress(i, 0);
+    }
+  }
+
+  async function startProcessing() {
+    if (!selectedFile) return;
+
+    const btn = document.getElementById('runBtn');
+    btn.disabled = true;
+    btn.innerText = '⏳ Subiendo video...';
+
+    const term = document.getElementById('terminal');
+    term.innerText = 'Subiendo video al servidor...';
+
+    resetAllSteps();
+    document.getElementById('globalProgressContainer').style.display = 'block';
+    document.getElementById('globalPercentLabel').innerText = '0%';
+    document.getElementById('globalProgressFill').style.width = '0%';
+    document.getElementById('globalStageLabel').innerText = 'Subiendo video...';
+    document.getElementById('globalProgressMsg').innerText = `Enviando ${selectedFile.name}...`;
+    startElapsedTimer();
+
+    const formData = new FormData();
+    formData.append('video', selectedFile);
+    formData.append('marker_size_mm', document.getElementById('markerSize').value);
+    formData.append('target_fps', document.getElementById('targetFps').value);
+    formData.append('min_laplacian_var', document.getElementById('blurVar').value);
+    formData.append('poisson_depth', document.getElementById('poissonDepth').value);
+
+    try {
+      logTerminal(`📤 Subiendo ${selectedFile.name}...`);
+      const uploadRes = await fetch('/api/upload-video', {
+        method: 'POST',
+        body: formData
+      });
+      const uploadData = await uploadRes.json();
+
+      if (!uploadData.session_id) {
+        throw new Error(uploadData.error || 'Error al subir el video.');
+      }
+
+      const sessionId = uploadData.session_id;
+      logTerminal(`✅ Video subido. Session ID: ${sessionId}`);
+      btn.innerText = '⏳ Procesando...';
+
+      await listenToProgress(sessionId);
+      loadProjectsList();
+
+    } catch (err) {
+      logTerminal(`❌ ERROR: ${err.message}`);
+      alert(`Error en el procesamiento: ${err.message}`);
+      stopElapsedTimer();
+    } finally {
+      btn.disabled = false;
+      btn.innerText = '🚀 Iniciar Reconstrucción 3D';
+    }
+  }
+
+  function listenToProgress(sessionId) {
+    return new Promise((resolve, reject) => {
+      const evtSource = new EventSource(`/api/progress/${sessionId}`);
+
+      evtSource.addEventListener('progress', (e) => {
+        const event = JSON.parse(e.data);
+        const { stage, percent, message, data } = event;
+
+        logTerminal(`[Stage ${stage}] ${percent}% — ${message}`);
+
+        if (stage >= 1 && stage <= 5) {
+          for (let i = 1; i < stage; i++) {
+            setStepStatus(i, 'done');
+            setStepSubProgress(i, 100);
+          }
+          setStepStatus(stage, percent >= 100 ? 'done' : 'active', message);
+          setStepSubProgress(stage, percent);
+          updateGlobalProgress(stage, percent, message);
+        }
+
+        // Pipeline complete
+        if (stage === 0 && data && data.success) {
+          stopElapsedTimer();
+          document.getElementById('globalPercentLabel').innerText = '100%';
+          document.getElementById('globalProgressFill').style.width = '100%';
+          document.getElementById('globalProgressFill').style.background = 'linear-gradient(90deg, #10b981, #38bdf8)';
+          document.getElementById('globalStageLabel').innerText = '🎉 ¡Completado!';
+          document.getElementById('globalProgressMsg').innerText = message;
+
+          for (let i = 1; i <= 5; i++) {
+            setStepStatus(i, 'done');
+            setStepSubProgress(i, 100);
+          }
+
+          activeScanData = data;
+
+          if (data.summary_report) {
+            setStepStatus(1, 'done', `${data.video_frames_extracted} frames`);
+            setStepStatus(2, 'done', `${data.num_registered_cameras} cámaras, ${data.num_sparse_points} puntos`);
+            setStepStatus(3, 'done', `Escala: ${data.scale_factor_mm.toFixed(4)} mm/u`);
+            setStepStatus(4, 'done', `${data.summary_report.mesh_stats.num_triangles} triángulos`);
+            setStepStatus(5, 'done', `${data.summary_report.slices_extracted} secciones`);
+          }
+
+          // Load STL into Three.js
+          const stlUrl = `/api/download-stl?path=${encodeURIComponent(data.stl_model_path)}`;
+          loadSTLModel(stlUrl, data.measurements);
+
+          // Populate table
+          populateTable(data.measurements);
+
+          // Show download button
+          const dlBtn = document.getElementById('downloadStlBtn');
+          dlBtn.href = stlUrl;
+          document.getElementById('downloadGroup').style.display = 'flex';
+
+          if (data.summary_report) {
+            const volBadge = document.getElementById('volumeBadge');
+            volBadge.innerText = `Volumen: ${data.summary_report.mesh_stats.volume_cm3.toFixed(1)} cm³ | Altura: ${data.summary_report.mesh_dimensions_mm.height_z.toFixed(1)} mm`;
+            volBadge.style.display = 'inline-block';
+          }
+
+          evtSource.close();
+          resolve();
+        }
+
+        if (stage === -1) {
+          stopElapsedTimer();
+          document.getElementById('globalStageLabel').innerText = '❌ Error';
+          document.getElementById('globalProgressFill').style.background = '#ef4444';
+          document.getElementById('globalProgressMsg').innerText = message;
+          evtSource.close();
+          reject(new Error(data?.error || message));
+        }
+      });
+
+      evtSource.addEventListener('heartbeat', () => {});
+
+      evtSource.onerror = () => {
+        stopElapsedTimer();
+        evtSource.close();
+        reject(new Error('Se perdió la conexión con el servidor.'));
+      };
+    });
+  }
+
+  function populateTable(measurements) {
+    const tbody = document.getElementById('slicesTableBody');
+    tbody.innerHTML = '';
+
+    if (!measurements || !measurements.slices || measurements.slices.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 24px;">No se detectaron secciones.</td></tr>';
+      return;
+    }
+
+    measurements.slices.forEach(s => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td style="font-weight: 600; color: #818cf8;">${s.height_z_mm.toFixed(1)}</td>
+        <td>${s.perimeter_mm.toFixed(1)}</td>
+        <td>${s.area_mm2.toFixed(0)}</td>
+        <td style="color: #38bdf8; font-weight: 600;">${s.equivalent_diameter_mm.toFixed(1)}</td>
+        <td>${s.bounding_diameter_x_mm.toFixed(1)}</td>
+        <td>${s.bounding_diameter_y_mm.toFixed(1)}</td>
+      `;
+      tbody.appendChild(row);
+    });
+  }
+
+  function compareCaliper() {
+    if (!activeScanData || !activeScanData.measurements) {
+      alert('Primero cargue o procese un escaneo para comparar medidas.');
+      return;
+    }
+
+    const realH = parseFloat(document.getElementById('caliperHeight').value);
+    const realD = parseFloat(document.getElementById('caliperDiam').value);
+    const realP = parseFloat(document.getElementById('caliperPerim').value);
+
+    const scannedH = activeScanData.summary_report?.mesh_dimensions_mm?.height_z || 0;
+    const scannedD = activeScanData.measurements.mean_diameter_mm || 0;
+
+    let resHtml = '<div style="display: flex; gap: 20px; flex-wrap: wrap;">';
+
+    if (!isNaN(realH) && realH > 0) {
+      const diffH = scannedH - realH;
+      const pctH = (Math.abs(diffH) / realH) * 100;
+      const color = pctH < 2.0 ? '#10b981' : '#f59e0b';
+      resHtml += `<div>📏 Altura: <strong>${scannedH.toFixed(1)} mm</strong> (Real: ${realH.toFixed(1)} mm) &rarr; <span style="color:${color}">Error: ${diffH > 0 ? '+' : ''}${diffH.toFixed(1)} mm (${pctH.toFixed(1)}%)</span></div>`;
+    }
+
+    if (!isNaN(realD) && realD > 0) {
+      const diffD = scannedD - realD;
+      const pctD = (Math.abs(diffD) / realD) * 100;
+      const color = pctD < 2.0 ? '#10b981' : '#f59e0b';
+      resHtml += `<div>⭕ Diám. Medio: <strong>${scannedD.toFixed(1)} mm</strong> (Real: ${realD.toFixed(1)} mm) &rarr; <span style="color:${color}">Error: ${diffD > 0 ? '+' : ''}${diffD.toFixed(1)} mm (${pctD.toFixed(1)}%)</span></div>`;
+    }
+
+    resHtml += '</div>';
+    const resEl = document.getElementById('caliperResults');
+    resEl.innerHTML = resHtml;
+    resEl.style.display = 'block';
+  }
+</script>
+
+</body>
+</html>

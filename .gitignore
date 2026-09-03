@@ -1,0 +1,81 @@
+# ==============================================================================
+# .gitignore - Reconstructor Métrico 3D (RGB a STL)
+# Autor: Cristian Vargas
+# ==============================================================================
+
+# --- Python & Bytecode ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# --- Virtual Environments ---
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Runtime Outputs & Scans ---
+output/*
+!output/.gitkeep
+
+# --- Runtime Video Uploads & User Media ---
+data/input_videos/*
+!data/input_videos/.gitkeep
+video_whatsapp/
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# --- Large Third-Party Binaries (COLMAP Windows Build) ---
+# COLMAP se descarga automáticamente mediante src/sfm_reconstruction.py
+tools/colmap/bin/
+tools/colmap/plugins/
+tools/colmap/*.zip
+tools/colmap/*.7z
+tools/colmap/*.tar.gz
+!tools/colmap/.gitkeep
+
+# --- IDEs & Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.gemini/
+
+# --- OS Specific Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# --- Logs & Temp ---
+*.log
+*.tmp
+scratch/
