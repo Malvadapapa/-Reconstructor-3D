@@ -59,6 +59,12 @@ class NeuralMatcher:
             width_confidence=-1,
         ).eval().to(self._device)
 
+    @property
+    def device(self):
+        """Return active torch device, initializing models if not yet loaded."""
+        self._init_models()
+        return self._device
+
     def extract_frame_features(self, image_path: Path) -> Dict[str, np.ndarray]:
         """
         Extract DISK keypoints and descriptors for a single image.

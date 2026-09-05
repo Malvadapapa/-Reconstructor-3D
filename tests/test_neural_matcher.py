@@ -56,6 +56,27 @@ class TestNeuralMatcher(unittest.TestCase):
         self.assertGreater(len(matches), 5, f"Expected > 5 matches, got {len(matches)}")
         print(f"\n[TestNeuralMatcher] DISK kpts: {len(feats0['keypoints'])}, {len(feats1['keypoints'])} | LightGlue matches: {len(matches)}")
 
+    def test_generate_image_pairs_and_device_property(self):
+        config = NeuralMatcherConfig(enabled=True, device="cpu")
+        matcher = NeuralMatcher(config)
+
+        # Verify device property works
+        self.assertIsNotNone(matcher.device)
+        self.assertEqual(matcher.device.type, "cpu")
+
+        # Test small set (exhaustive)
+        small_names = [f"frame_{i:03d}.jpg" for i in range(5)]
+        pairs_small = matcher.generate_image_pairs(small_names)
+        self.assertEqual(len(pairs_small), 10)  # 5*4/2 = 10
+
+        # Test larger set on CPU (sliding window + loop closure)
+        large_names = [f"frame_{i:03d}.jpg" for i in range(60)]
+        pairs_large = matcher.generate_image_pairs(large_names)
+        self.assertGreater(len(pairs_large), 50)
+        self.assertLess(len(pairs_large), 1770)  # should be ~300 pairs, not 1770
+        print(f"[TestNeuralMatcher] Generated {len(pairs_large)} pairs for 60 frames on CPU.")
+
 
 if __name__ == "__main__":
     unittest.main()
+
