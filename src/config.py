@@ -65,7 +65,7 @@ class NeuralMatcherConfig:
     device: str = "cpu"               # "cpu" (ideal without NVIDIA GPU), "cuda", or "auto"
     filter_threshold: float = 0.1     # LightGlue confidence pruning threshold
     min_inliers: int = 15             # Minimum inlier matches to register an image pair
-    max_frames_exhaustive: int = 150  # Up to 150 frames uses exhaustive all-to-all matching
+    max_frames_exhaustive: int = 15   # Up to 15 frames uses exhaustive; above uses sliding window + loop closure
 
 
 @dataclass

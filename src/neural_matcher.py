@@ -123,12 +123,16 @@ class NeuralMatcher:
         n = len(image_names)
         pairs: List[Tuple[int, int]] = []
 
-        if n <= self.config.max_frames_exhaustive:
+        is_cpu = getattr(self.device, "type", str(self.device)) == "cpu"
+        use_exhaustive = (n <= 12) if is_cpu else (n <= self.config.max_frames_exhaustive)
+
+        if use_exhaustive:
             for i in range(n):
                 for j in range(i + 1, n):
                     pairs.append((i, j))
         else:
-            window = 8
+            # Orbital sliding window with 360-degree loop closure
+            window = 5 if is_cpu else 8
             pair_set = set()
             for i in range(n):
                 for w in range(1, window + 1):
