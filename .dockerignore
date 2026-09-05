@@ -1,0 +1,41 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Python artifacts
+.venv/
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local tools and Windows binaries
+tools/colmap/
+tools/*.zip
+tools/*.exe
+
+# Data outputs and large video test files
+output/
+data/input_videos/*.mp4
+data/input_videos/*.mov
+data/input_videos/*.avi
+data/printable_markers/*.pdf
+data/printable_markers/*.png
+
+# IDE and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Documentation and logs
+*.log
+DOCUMENTACION_TECNICA_Y_BITACORA.pdf

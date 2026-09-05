@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  reconstructor3d:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: reconstructor-3d:latest
+    container_name: reconstructor-3d
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persistent storage for scans, STL meshes, GLB models and reports
+      - ./output:/app/output
+      # Persistent storage for calibration markers and input videos
+      - ./data:/app/data
+    environment:
+      # Memory and CPU tuning for shared VPS
+      - OMP_NUM_THREADS=2
+      - MALLOC_ARENA_MAX=2
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          # Safety boundary for shared VPS (adjust if your VPS has more/less RAM)
+          memory: 4096M
+        reservations:
+          memory: 1024M

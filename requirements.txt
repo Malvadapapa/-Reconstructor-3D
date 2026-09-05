@@ -40,4 +40,4 @@ pycolmap>=0.6.0                 # BSD-3 — API Python de COLMAP (DB, mapper, MV
 
 # UV Texture Mapping
 xatlas>=0.0.9                   # MIT — UV unwrap paramétrico
-pyembree>=0.1.6                 # Apache-2.0 — raycasting acelerado (opcional, mejora trimesh)
+# pyembree>=0.1.6               # Opcional: requiere SDK Intel Embree en Linux; trimesh usa fallback nativo

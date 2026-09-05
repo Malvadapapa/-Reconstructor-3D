@@ -168,6 +168,15 @@ Opciones principales:
 * `--texture`: Activa el pipeline de despliegue UV (`xatlas`) y horneado de texturas fotorrealistas (`.obj`, `.glb`).
 * `--atlas-res`: Resolución del atlas de texturas (`1024`, `2048`, `4096`).
 
+### Modo Docker / VPS Compartido (Producción)
+Despliegue contenerizado optimizado para servidores Linux sin GPU y con consumo acotado de RAM:
+
+```bash
+# 1. En tu servidor VPS (Ubuntu / Debian):
+docker compose up -d --build
+```
+La aplicación iniciará automáticamente en `http://<IP_DE_TU_VPS>:8000` con persistencia de escaneos en `./output` y marcadores en `./data`.
+
 ---
 
 ## 🧩 Filosofía de Dependencias y Licencias
