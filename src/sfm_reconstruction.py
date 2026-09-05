@@ -192,11 +192,23 @@ class SfMReconstructor:
 
         use_gpu_flag = "1" if (self.config.use_gpu and has_cuda) else "0"
 
+        # Explicitly filter ONLY top-level image files (prevent any subfolder like annotated/ from being read)
+        image_extensions = {".jpg", ".jpeg", ".png", ".bmp"}
+        valid_image_files = sorted([
+            f.name for f in image_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in image_extensions
+        ])
+        image_list_path = output_sfm_dir / "image_list.txt"
+        with open(image_list_path, "w", encoding="utf-8") as f_list:
+            for fname in valid_image_files:
+                f_list.write(f"{fname}\n")
+
         # 1. Feature Extractor
         cmd_extract = [
             self.colmap_bin, "feature_extractor",
             "--database_path", str(database_path),
             "--image_path", str(image_dir),
+            "--image_list_path", str(image_list_path),
             "--ImageReader.camera_model", self.config.camera_model,
             "--ImageReader.single_camera", "1",
             "--SiftExtraction.use_gpu", use_gpu_flag,

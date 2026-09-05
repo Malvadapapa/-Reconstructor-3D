@@ -67,11 +67,18 @@ class VideoIngestor:
         # Clear existing frames
         for f in output_frames_dir.glob("frame_*.jpg"):
             f.unlink(missing_ok=True)
-        debug_dir = output_frames_dir / "annotated"
+        # Ensure any legacy annotated subfolder inside frames is removed
+        legacy_annotated = output_frames_dir / "annotated"
+        if legacy_annotated.exists():
+            import shutil
+            shutil.rmtree(legacy_annotated, ignore_errors=True)
+
+        # Keep annotated debug frames completely isolated outside of frames/
+        debug_dir = output_frames_dir.parent / "annotated_debug"
         if debug_dir.exists():
             for f in debug_dir.glob("*.jpg"):
                 f.unlink(missing_ok=True)
-        debug_dir.mkdir(exist_ok=True)
+        debug_dir.mkdir(parents=True, exist_ok=True)
 
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
