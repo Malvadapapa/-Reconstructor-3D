@@ -5,6 +5,7 @@ to COLMAP-compatible SQLite database and running geometric verification for SfM.
 """
 import math
 import os
+import pickle
 import sqlite3
 import subprocess
 import tempfile
@@ -154,18 +155,42 @@ class NeuralMatcher:
         self,
         image_dir: Path,
         database_path: Path,
-        progress_callback: Optional[Callable[[int, str], None]] = None
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        allow_reuse: bool = True
     ) -> Dict:
         """
         Full pipeline for neural feature extraction and matching into a COLMAP database:
         1. Initialize COLMAP SQLite database schema with single shared camera.
-        2. Extract DISK features for all images and store keypoints in SQLite.
-        3. Match image pairs with LightGlue.
+        2. Extract DISK features for all images and store keypoints in SQLite (cached on disk).
+        3. Match image pairs with LightGlue (cached on disk).
         4. Write raw match list and execute COLMAP 'matches_importer' for TwoViewGeometry verification.
         """
         self._init_models()
         image_dir = Path(image_dir)
         database_path = Path(database_path)
+        cache_dir = database_path.parent
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        features_cache_file = cache_dir / "disk_features_cache.pkl"
+        matches_cache_file = cache_dir / "lightglue_matches_cache.pkl"
+
+        # Check if complete verified database already exists
+        if allow_reuse and database_path.exists():
+            try:
+                test_conn = sqlite3.connect(str(database_path))
+                test_cur = test_conn.cursor()
+                test_cur.execute("SELECT count(*) FROM two_view_geometries WHERE rows > 0")
+                verified_pairs = test_cur.fetchone()[0]
+                test_conn.close()
+                if verified_pairs >= 10:
+                    print(f"[NeuralMatcher] Reusing existing verified database with {verified_pairs} two-view geometries.")
+                    if progress_callback: progress_callback(65, f"⚡ Base de datos SfM recuperada ({verified_pairs} pares geométricos verificados)...")
+                    return {
+                        "num_images": len(list(image_dir.glob("*.*"))),
+                        "num_pairs_matched": verified_pairs,
+                        "database_path": database_path
+                    }
+            except Exception as e:
+                print(f"[NeuralMatcher] Notice: Existing database not complete ({e}), rebuilding.")
 
         # Collect image files sorted
         image_extensions = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -254,7 +279,16 @@ class NeuralMatcher:
             (1, 2, w, h, camera_params.tobytes(), 1)
         )
 
-        # 3. Extract DISK features for all images
+        # 3. Load or Extract DISK features for all images
+        disk_disk_cache: Dict[str, Dict] = {}
+        if allow_reuse and features_cache_file.exists():
+            try:
+                with open(features_cache_file, "rb") as f_c:
+                    disk_disk_cache = pickle.load(f_c)
+                print(f"[NeuralMatcher] Loaded {len(disk_disk_cache)} cached DISK feature sets.")
+            except Exception as e:
+                print(f"[NeuralMatcher] Warning loading feature cache: {e}")
+
         features_cache: List[Dict] = []
         num_images = len(image_files)
 
@@ -265,12 +299,25 @@ class NeuralMatcher:
                 (img_id, img_path.name, 1)
             )
 
-            # Extract DISK keypoints
             pct = 15 + int(20 * (idx + 1) / num_images)
-            if progress_callback:
-                progress_callback(pct, f"Extrayendo puntos neuronales DISK [{idx + 1}/{num_images}]...")
 
-            feats = self.extract_frame_features(img_path)
+            if img_path.name in disk_disk_cache:
+                feats = disk_disk_cache[img_path.name]
+                if progress_callback and (idx % 5 == 0 or idx == num_images - 1):
+                    progress_callback(pct, f"⚡ Reutilizando puntos DISK [{idx + 1}/{num_images}] (en caché)...")
+            else:
+                if progress_callback:
+                    progress_callback(pct, f"Extrayendo puntos neuronales DISK [{idx + 1}/{num_images}]...")
+                feats = self.extract_frame_features(img_path)
+                disk_disk_cache[img_path.name] = feats
+                # Incremental persist every 5 frames
+                if (idx + 1) % 5 == 0 or (idx + 1) == num_images:
+                    try:
+                        with open(features_cache_file, "wb") as f_c:
+                            pickle.dump(disk_disk_cache, f_c)
+                    except Exception:
+                        pass
+
             features_cache.append(feats)
 
             # Insert keypoints: shape (N, 2), float32
@@ -280,33 +327,69 @@ class NeuralMatcher:
                 (img_id, kpts.shape[0], 2, kpts.tobytes())
             )
 
+        # Save final cache
+        try:
+            with open(features_cache_file, "wb") as f_c:
+                pickle.dump(disk_disk_cache, f_c)
+        except Exception:
+            pass
+
         conn.commit()
         conn.close()
 
-        # 4. Generate pairs and match with LightGlue
+        # 4. Generate pairs and match with LightGlue (with caching)
         pairs = self.generate_image_pairs([f.name for f in image_files])
         num_pairs = len(pairs)
         print(f"[NeuralMatcher] Matching {num_pairs} image pairs with LightGlue...")
+
+        matches_cache: Dict[Tuple[str, str], np.ndarray] = {}
+        if allow_reuse and matches_cache_file.exists():
+            try:
+                with open(matches_cache_file, "rb") as f_m:
+                    matches_cache = pickle.load(f_m)
+                print(f"[NeuralMatcher] Loaded {len(matches_cache)} cached LightGlue pair matches.")
+            except Exception as e:
+                print(f"[NeuralMatcher] Warning loading matches cache: {e}")
 
         # Prepare match list text file for COLMAP's matches_importer
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f_match:
             match_file_path = Path(f_match.name)
 
             for p_idx, (i, j) in enumerate(pairs):
+                name_i = image_files[i].name
+                name_j = image_files[j].name
+                pair_key = (name_i, name_j)
+
                 if p_idx % max(1, num_pairs // 20) == 0:
                     pct = 35 + int(25 * (p_idx + 1) / num_pairs)
                     if progress_callback:
-                        progress_callback(pct, f"Emparejamiento neuronal LightGlue [{p_idx + 1}/{num_pairs}]...")
+                        cached_str = " (recuperado)" if pair_key in matches_cache else ""
+                        progress_callback(pct, f"Emparejamiento neuronal LightGlue [{p_idx + 1}/{num_pairs}]{cached_str}...")
 
-                matches = self.match_pair(features_cache[i], features_cache[j])
+                if pair_key in matches_cache:
+                    matches = matches_cache[pair_key]
+                else:
+                    matches = self.match_pair(features_cache[i], features_cache[j])
+                    matches_cache[pair_key] = matches
+                    if (p_idx + 1) % 25 == 0 or (p_idx + 1) == num_pairs:
+                        try:
+                            with open(matches_cache_file, "wb") as f_m:
+                                pickle.dump(matches_cache, f_m)
+                        except Exception:
+                            pass
+
                 if matches.shape[0] >= self.config.min_inliers:
-                    # Write block
-                    name_i = image_files[i].name
-                    name_j = image_files[j].name
                     f_match.write(f"{name_i} {name_j}\n")
                     for m in matches:
                         f_match.write(f"{m[0]} {m[1]}\n")
                     f_match.write("\n")
+
+        # Save final matches cache
+        try:
+            with open(matches_cache_file, "wb") as f_m:
+                pickle.dump(matches_cache, f_m)
+        except Exception:
+            pass
 
         # 5. Run COLMAP matches_importer to perform geometric verification (RANSAC)
         if progress_callback: progress_callback(60, "Verificando geometría epipolar 3D con COLMAP...")

@@ -251,35 +251,12 @@ class SfMReconstructor:
         image_dir: Path,
         output_sfm_dir: Path,
         database_path: Path,
-        progress_callback=None
+        progress_callback=None,
+        allow_reuse: bool = True
     ) -> Dict:
         """Run COLMAP mapper (Bundle Adjustment) on an already matched database."""
         sparse_dir = output_sfm_dir / "sparse"
         sparse_dir.mkdir(exist_ok=True)
-
-        # 3. Mapper (Bundle Adjustment)
-        cmd_map = [
-            self.colmap_bin, "mapper",
-            "--database_path", str(database_path),
-            "--image_path", str(image_dir),
-            "--output_path", str(sparse_dir),
-            "--Mapper.min_num_matches", "10",
-            "--Mapper.init_min_num_inliers", "15",
-            "--Mapper.abs_pose_min_num_inliers", "15",
-            "--Mapper.init_min_tri_angle", "4.0",
-            "--Mapper.ba_refine_extra_params", "0"
-        ]
-        print(f"[SfM] Running sparse mapping...")
-        if progress_callback: progress_callback(65, "Ejecutando Bundle Adjustment (mapper)...")
-        res = subprocess.run(cmd_map, capture_output=True, text=True)
-        if res.returncode != 0:
-            raise RuntimeError(f"COLMAP mapper failed:\n{res.stderr or res.stdout}")
-        if progress_callback: progress_callback(90, "Reconstrucción 3D completada [OK]")
-
-        # Check model index and pick the LARGEST submodel (most registered images)
-        model_subdirs = [d for d in sparse_dir.iterdir() if d.is_dir()]
-        if not model_subdirs:
-            raise RuntimeError("COLMAP did not produce any reconstructed sparse submodel.")
 
         def get_model_size(mdir: Path) -> int:
             bin_file = mdir / "images.bin"
@@ -289,6 +266,41 @@ class SfMReconstructor:
                 except Exception:
                     pass
             return 0
+
+        # Check if completed sparse reconstruction already exists
+        existing_subdirs = [d for d in sparse_dir.iterdir() if d.is_dir()] if sparse_dir.exists() else []
+        reused = False
+        if allow_reuse and existing_subdirs:
+            primary_cand = max(existing_subdirs, key=get_model_size)
+            if get_model_size(primary_cand) >= 3:
+                print(f"[SfM] Reusing existing sparse reconstruction from '{primary_cand.name}' with {get_model_size(primary_cand)} registered cameras.")
+                if progress_callback: progress_callback(90, f"⚡ Reutilizando mapa 3D previo ({get_model_size(primary_cand)} cámaras)...")
+                reused = True
+
+        if not reused:
+            # 3. Mapper (Bundle Adjustment)
+            cmd_map = [
+                self.colmap_bin, "mapper",
+                "--database_path", str(database_path),
+                "--image_path", str(image_dir),
+                "--output_path", str(sparse_dir),
+                "--Mapper.min_num_matches", "10",
+                "--Mapper.init_min_num_inliers", "15",
+                "--Mapper.abs_pose_min_num_inliers", "15",
+                "--Mapper.init_min_tri_angle", "4.0",
+                "--Mapper.ba_refine_extra_params", "0"
+            ]
+            print(f"[SfM] Running sparse mapping...")
+            if progress_callback: progress_callback(65, "Ejecutando Bundle Adjustment (mapper)...")
+            res = subprocess.run(cmd_map, capture_output=True, text=True)
+            if res.returncode != 0:
+                raise RuntimeError(f"COLMAP mapper failed:\n{res.stderr or res.stdout}")
+            if progress_callback: progress_callback(90, "Reconstrucción 3D completada [OK]")
+
+        # Check model index and pick the LARGEST submodel (most registered images)
+        model_subdirs = [d for d in sparse_dir.iterdir() if d.is_dir()]
+        if not model_subdirs:
+            raise RuntimeError("COLMAP did not produce any reconstructed sparse submodel.")
 
         primary_model_dir = max(model_subdirs, key=get_model_size)
         print(f"[SfM] Selected primary submodel '{primary_model_dir.name}' with {get_model_size(primary_model_dir)} registered cameras.")

@@ -37,8 +37,30 @@
   </header>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       SECCIÓN SUPERIOR: WORKFLOW DE CONVERSIÓN (3 COLUMNAS HORIZONTALES)
-       ═══════════════════════════════════════════════════════════════ -->
+  <!-- Resumable Session Alert Banner -->
+  <div id="resumeBanner" class="resume-banner" style="display: none;">
+    <div class="resume-banner-content">
+      <div class="resume-banner-icon">⚡</div>
+      <div>
+        <div class="resume-banner-title">
+          <span>¿Deseas retomar el último procesamiento interrumpido?</span>
+          <span class="badge-tag" style="font-size: 0.7rem;" id="resumeBannerBadge">Checkpoint DISK</span>
+        </div>
+        <div class="resume-banner-sub" id="resumeBannerDesc">
+          Se detectaron fotogramas y puntos neuronales DISK calculados previamente. Ahorra tiempo retomando desde el paso anterior.
+        </div>
+      </div>
+    </div>
+    <div class="resume-banner-actions">
+      <button class="btn-resume" id="resumeBannerBtn" onclick="resumeFromBanner()">
+        ⚡ Retomar desde paso anterior
+      </button>
+      <button class="btn-discard" onclick="discardResumableSession()">
+        ✕ Descartar
+      </button>
+    </div>
+  </div>
+
   <div class="top-workflow-grid">
 
     <!-- Card 1: Carga de Video -->
@@ -367,6 +389,7 @@
   window.addEventListener('DOMContentLoaded', () => {
     initThreeViewer();
     loadProjectsList();
+    checkResumableSession();
   });
 
   function initThreeViewer() {
@@ -1121,6 +1144,9 @@
           document.getElementById('globalProgressFill').style.background = '#ef4444';
           document.getElementById('globalProgressMsg').innerText = message;
           evtSource.close();
+          if (data && data.resumable) {
+            showResumeModal(data.scan_id, data.frames_count, data.has_disk_cache, message);
+          }
           reject(new Error(data?.error || message));
         }
       });
@@ -1192,7 +1218,181 @@
     resEl.innerHTML = resHtml;
     resEl.style.display = 'block';
   }
+
+  // ── Resumable Checkpoint Management ──
+  let activeResumableData = null;
+  let modalResumableScanId = null;
+
+  async function checkResumableSession() {
+    try {
+      const res = await fetch('/api/resumable-session');
+      const data = await res.json();
+      if (data && data.has_resumable) {
+        activeResumableData = data;
+        const banner = document.getElementById('resumeBanner');
+        const badge = document.getElementById('resumeBannerBadge');
+        const desc = document.getElementById('resumeBannerDesc');
+        
+        if (badge) {
+          badge.innerText = data.has_disk_cache ? 'Puntos DISK en Caché' : 'Fotogramas en Caché';
+        }
+        if (desc) {
+          desc.innerText = `Se detectó la sesión previa "${data.video_name}" (${data.last_step_description || data.frames_count + ' frames'}). ¿Deseas retomar el procesamiento desde el paso anterior para ahorrar tiempo?`;
+        }
+        if (banner) {
+          banner.style.display = 'flex';
+        }
+      }
+    } catch (e) {
+      console.warn('Error checking resumable session:', e);
+    }
+  }
+
+  function resumeFromBanner() {
+    if (activeResumableData && activeResumableData.scan_id) {
+      resumePipeline(activeResumableData.scan_id);
+    }
+  }
+
+  async function discardResumableSession() {
+    const banner = document.getElementById('resumeBanner');
+    if (banner) banner.style.display = 'none';
+    if (activeResumableData && activeResumableData.scan_id) {
+      const sid = activeResumableData.scan_id;
+      activeResumableData = null;
+      try {
+        await fetch(`/api/project/${sid}`, { method: 'DELETE' });
+      } catch (e) {
+        console.warn('Error deleting discarded session:', e);
+      }
+    }
+  }
+
+  function showResumeModal(scanId, framesCount, hasDiskCache, errorMsg) {
+    modalResumableScanId = scanId;
+    const modal = document.getElementById('resumeModal');
+    if (!modal) return;
+    
+    const reasonEl = document.getElementById('resumeModalReason');
+    if (reasonEl) reasonEl.innerText = errorMsg || 'Ocurrió un error durante la ejecución.';
+    
+    const detailsEl = document.getElementById('resumeModalCheckpointDetails');
+    if (detailsEl) {
+      detailsEl.innerText = `${framesCount || '60'} frames extraídos · ${hasDiskCache ? 'Puntos neuronales DISK en caché' : 'Base de datos SfM preservada'}`;
+    }
+    
+    modal.style.display = 'flex';
+  }
+
+  function closeResumeModal(clear) {
+    const modal = document.getElementById('resumeModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function confirmResumeFromModal() {
+    closeResumeModal(false);
+    if (modalResumableScanId) {
+      resumePipeline(modalResumableScanId);
+    }
+  }
+
+  async function resumePipeline(scanId) {
+    if (!scanId) return;
+
+    const btn = document.getElementById('runBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '⚡ Reanudando...';
+    }
+
+    const term = document.getElementById('terminal');
+    if (term) term.innerText = 'Reanudando procesamiento desde checkpoint...';
+
+    resetAllSteps();
+    document.getElementById('globalProgressContainer').style.display = 'block';
+    document.getElementById('globalPercentLabel').innerText = '0%';
+    document.getElementById('globalProgressFill').style.width = '0%';
+    document.getElementById('globalProgressFill').style.background = 'linear-gradient(90deg, #6366f1, #38bdf8)';
+    document.getElementById('globalStageLabel').innerText = '⚡ Reanudando pipeline...';
+    document.getElementById('globalProgressMsg').innerText = `Recuperando checkpoint de ${scanId}...`;
+    startElapsedTimer();
+
+    const formData = new FormData();
+    formData.append('scan_id', scanId);
+    formData.append('marker_size_mm', document.getElementById('markerSize').value);
+    formData.append('target_fps', document.getElementById('targetFps').value);
+    formData.append('min_laplacian_var', document.getElementById('blurVar').value);
+    formData.append('poisson_depth', document.getElementById('poissonDepth').value);
+    formData.append('enable_neural', document.getElementById('enableNeural').checked ? 'true' : 'false');
+    formData.append('enable_texture', document.getElementById('enableTexture').checked ? 'true' : 'false');
+    formData.append('atlas_res', document.getElementById('atlasRes').value);
+
+    // Hide banner and modal
+    const banner = document.getElementById('resumeBanner');
+    if (banner) banner.style.display = 'none';
+    const modal = document.getElementById('resumeModal');
+    if (modal) modal.style.display = 'none';
+
+    try {
+      logTerminal(`⚡ Solicitando reanudación de sesión: ${scanId}...`);
+      const res = await fetch('/api/resume-session', {
+        method: 'POST',
+        body: formData
+      });
+      const resData = await res.json();
+
+      if (!resData.session_id) {
+        throw new Error(resData.error || 'No se pudo reanudar la sesión.');
+      }
+
+      logTerminal(`⚡ Conectando al stream de progreso para sesión: ${resData.session_id}`);
+      btn.innerText = '⏳ Procesando (Reanudado)...';
+      await listenToProgress(resData.session_id);
+      loadProjectsList();
+
+    } catch (err) {
+      logTerminal(`❌ ERROR al reanudar: ${err.message}`);
+      alert(`Error al reanudar: ${err.message}`);
+      stopElapsedTimer();
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerText = '🚀 Iniciar Reconstrucción 3D';
+      }
+    }
+  }
 </script>
+
+<!-- Modal Interactivo para Reanudar en caso de Error -->
+<div id="resumeModal" class="resume-modal-overlay" style="display: none;">
+  <div class="resume-modal-card">
+    <div class="resume-modal-header">
+      <div class="resume-modal-icon">⚠️</div>
+      <div>
+        <h3 style="margin: 0; font-size: 1.05rem; color: #f8fafc; font-weight: 700;">El procesamiento se interrumpió</h3>
+        <p style="margin: 4px 0 0; font-size: 0.8rem; color: var(--text-secondary);" id="resumeModalReason">Ocurrió un inconveniente durante el procesamiento.</p>
+      </div>
+    </div>
+    <div class="resume-modal-body">
+      <div class="resume-checkpoint-badge">
+        <span class="checkpoint-icon">💾</span>
+        <div>
+          <div style="font-weight: 700; font-size: 0.86rem; color: #38bdf8;" id="resumeModalCheckpointTitle">Progreso guardado disponible</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted);" id="resumeModalCheckpointDetails">Fotogramas extraídos y puntos neuronales DISK preservados</div>
+        </div>
+      </div>
+      <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.45; margin: 14px 0 0;">
+        Dado que la extracción neural DISK es muy intensiva y tarda varios minutos, <strong>puedes retomar el procesamiento desde el paso anterior</strong> sin perder el progreso ni recalcular los puntos de nuevo.
+      </p>
+    </div>
+    <div class="resume-modal-footer">
+      <button class="btn btn-secondary" onclick="closeResumeModal(false)" style="font-size: 0.82rem;">❌ Cancelar / Empezar de Cero</button>
+      <button class="btn btn-resume" id="resumeModalConfirmBtn" onclick="confirmResumeFromModal()">
+        ⚡ Retomar desde el paso anterior
+      </button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

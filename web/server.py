@@ -10,6 +10,7 @@ import re
 import shutil
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from queue import Queue, Empty
 from typing import Optional, List, Dict, Any
@@ -101,24 +102,33 @@ def send_progress(session_id: str, stage: int, percent: int, message: str, data:
         active_sessions[session_id]["queue"].put(event)
 
 
-def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
-    """Run the pipeline in a background thread, pushing progress events."""
+def run_pipeline_with_progress(session_id: str, config: PipelineConfig, resume: bool = False):
+    """Run the pipeline in a background thread, pushing progress events with checkpoint resume support."""
     try:
         start_time = time.time()
         pipeline = VideoTo3DPipeline(config)
 
         # ── STAGE 1: Video Ingest ──
-        send_progress(session_id, 1, 5, "Abriendo video y analizando metadata...")
-
         frames_dir = config.output_dir / "frames"
-        manifest = pipeline.ingestor.process_video(config.video_path, frames_dir)
-        total_extracted = manifest["total_extracted"]
+        manifest_path = config.output_dir / "frames_manifest.json"
+        existing_frames = list(frames_dir.glob("frame_*.jpg")) if frames_dir.exists() else []
 
-        if total_extracted < 5:
-            raise ValueError(f"Muy pocos frames extraídos ({total_extracted}). Grabe un video más largo o con mejor iluminación.")
+        if resume and manifest_path.exists() and len(existing_frames) >= 5:
+            with open(manifest_path, "r", encoding="utf-8") as f_m:
+                manifest = json.load(f_m)
+            total_extracted = manifest.get("total_extracted", len(existing_frames))
+            send_progress(session_id, 1, 100, f"⚡ Reanudado: {total_extracted} frames recuperados de checkpoint",
+                          {"frames": total_extracted})
+        else:
+            send_progress(session_id, 1, 5, "Abriendo video y analizando metadata...")
+            manifest = pipeline.ingestor.process_video(config.video_path, frames_dir, allow_reuse=resume)
+            total_extracted = manifest["total_extracted"]
 
-        send_progress(session_id, 1, 100, f"✅ {total_extracted} frames extraídos",
-                      {"frames": total_extracted})
+            if total_extracted < 5:
+                raise ValueError(f"Muy pocos frames extraídos ({total_extracted}). Grabe un video más largo o con mejor iluminación.")
+
+            send_progress(session_id, 1, 100, f"✅ {total_extracted} frames extraídos",
+                          {"frames": total_extracted})
 
         # ── STAGE 2: Structure from Motion ──
         sfm_dir = config.output_dir / "sfm"
@@ -128,8 +138,8 @@ def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
             send_progress(session_id, 2, 10, "Extrayendo keypoints neuronales DISK...")
             def neural_cb(pct, msg):
                 send_progress(session_id, 2, pct, msg)
-            pipeline.neural_matcher.run_neural_sfm_prep(frames_dir, database_path, progress_callback=neural_cb)
-            sfm_result = pipeline.sfm.run_mapper(frames_dir, sfm_dir, database_path, progress_callback=neural_cb)
+            pipeline.neural_matcher.run_neural_sfm_prep(frames_dir, database_path, progress_callback=neural_cb, allow_reuse=resume)
+            sfm_result = pipeline.sfm.run_mapper(frames_dir, sfm_dir, database_path, progress_callback=neural_cb, allow_reuse=resume)
         else:
             send_progress(session_id, 2, 10, "Extrayendo features SIFT de cada frame...")
             def sfm_progress(pct, msg):
@@ -290,7 +300,29 @@ def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        error_data = {"success": False, "error": str(e)}
+
+        # Check if previous artifacts exist to allow resuming
+        frames_dir = config.output_dir / "frames"
+        manifest_path = config.output_dir / "frames_manifest.json"
+        existing_frames = list(frames_dir.glob("frame_*.jpg")) if frames_dir.exists() else []
+        sfm_dir = config.output_dir / "sfm"
+        disk_cache_path = sfm_dir / "disk_features_cache.pkl"
+        has_disk_cache = disk_cache_path.exists()
+        database_path = sfm_dir / "database.db"
+        has_database = database_path.exists()
+
+        resumable = len(existing_frames) >= 5 or manifest_path.exists()
+
+        error_data = {
+            "success": False,
+            "error": str(e),
+            "resumable": resumable,
+            "scan_id": session_id,
+            "frames_count": len(existing_frames),
+            "has_disk_cache": has_disk_cache,
+            "has_database": has_database,
+            "can_resume_from": "sfm" if len(existing_frames) >= 5 else "none"
+        }
         active_sessions[session_id]["result"] = error_data
         active_sessions[session_id]["status"] = "error"
         send_progress(session_id, -1, 0, f"❌ Error: {str(e)}", error_data)
@@ -345,6 +377,134 @@ async def upload_video_endpoint(
         return JSONResponse(content={
             "session_id": session_id,
             "message": "Video subido. Conectando al stream de progreso..."
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+
+@app.get("/api/resumable-session")
+async def get_resumable_session():
+    """Check if there is an interrupted/incomplete scan session that can be resumed."""
+    try:
+        if not OUTPUT_DIR.exists():
+            return JSONResponse(content={"has_resumable": False})
+
+        candidate_dirs = []
+        for d in OUTPUT_DIR.iterdir():
+            if d.is_dir() and d.name.startswith("scan_"):
+                # Ignore fully completed sessions (have mesh or summary report)
+                summary_file = d / "reports" / "pipeline_summary.json"
+                mesh_file = d / "mesh" / "model.stl"
+                mesh_glb = d / "mesh" / "model_textured.glb"
+                if summary_file.exists() or mesh_file.exists() or mesh_glb.exists():
+                    continue
+
+                # Check if it has frames or manifest
+                frames_dir = d / "frames"
+                manifest_file = d / "frames_manifest.json"
+                frames_count = len(list(frames_dir.glob("frame_*.jpg"))) if frames_dir.exists() else 0
+                if frames_count < 5 and not manifest_file.exists():
+                    continue
+
+                # Find saved video file
+                video_files = [f for f in d.iterdir() if f.is_file() and f.suffix.lower() in [".mp4", ".mov", ".avi", ".mkv"]]
+                if not video_files:
+                    continue
+
+                sfm_dir = d / "sfm"
+                disk_cache_file = sfm_dir / "disk_features_cache.pkl"
+                has_disk_cache = disk_cache_file.exists()
+                database_file = sfm_dir / "database.db"
+                has_database = database_file.exists()
+
+                candidate_dirs.append({
+                    "scan_id": d.name,
+                    "mtime": d.stat().st_mtime,
+                    "video_name": video_files[0].name,
+                    "video_path": str(video_files[0]),
+                    "frames_count": frames_count,
+                    "has_disk_cache": has_disk_cache,
+                    "has_database": has_database,
+                })
+
+        if not candidate_dirs:
+            return JSONResponse(content={"has_resumable": False})
+
+        # Most recent first
+        candidate_dirs.sort(key=lambda x: x["mtime"], reverse=True)
+        latest = candidate_dirs[0]
+
+        step_desc = f"{latest['frames_count']} fotogramas extraídos"
+        if latest["has_disk_cache"]:
+            step_desc += " y puntos neuronales DISK en caché"
+        elif latest["has_database"]:
+            step_desc += " y base de datos SfM inicializada"
+
+        return JSONResponse(content={
+            "has_resumable": True,
+            "scan_id": latest["scan_id"],
+            "video_name": latest["video_name"],
+            "frames_count": latest["frames_count"],
+            "has_disk_cache": latest["has_disk_cache"],
+            "has_database": latest["has_database"],
+            "last_step_description": step_desc,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(latest["mtime"]))
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"has_resumable": False, "error": str(e)})
+
+
+@app.post("/api/resume-session")
+async def resume_session_endpoint(
+    scan_id: str = Form(...),
+    marker_size_mm: float = Form(50.0),
+    target_fps: float = Form(4.0),
+    min_laplacian_var: float = Form(30.0),
+    poisson_depth: int = Form(9),
+    enable_neural: bool = Form(True),
+    enable_texture: bool = Form(True),
+    atlas_res: int = Form(2048)
+):
+    """Resume an interrupted scan session from its last valid checkpoint."""
+    try:
+        session_out_dir = OUTPUT_DIR / scan_id
+        if not session_out_dir.exists():
+            raise HTTPException(status_code=404, detail="Sesión a reanudar no encontrada.")
+
+        video_files = [f for f in session_out_dir.iterdir() if f.is_file() and f.suffix.lower() in [".mp4", ".mov", ".avi", ".mkv"]]
+        if not video_files:
+            raise HTTPException(status_code=400, detail="No se encontró el archivo de video original en la sesión.")
+
+        saved_video_path = video_files[0]
+
+        config = PipelineConfig(
+            video_path=saved_video_path,
+            output_dir=session_out_dir,
+            marker=MarkerConfig(marker_size_mm=marker_size_mm),
+            ingest=VideoIngestConfig(target_fps=target_fps, min_laplacian_var=min_laplacian_var),
+            sfm=SfMConfig(),
+            mesh=MeshConfig(poisson_depth=poisson_depth),
+            slice=SliceConfig(step_height_mm=10.0),
+            neural=NeuralMatcherConfig(enabled=enable_neural, device="cpu"),
+            texture=TextureConfig(enabled=enable_texture, atlas_resolution=atlas_res)
+        )
+
+        session_id = scan_id
+        active_sessions[session_id] = {
+            "queue": Queue(),
+            "status": "running",
+            "result": None
+        }
+
+        thread = threading.Thread(target=run_pipeline_with_progress, args=(session_id, config, True), daemon=True)
+        thread.start()
+
+        return JSONResponse(content={
+            "session_id": session_id,
+            "message": "Reanudando procesamiento desde el paso anterior..."
         })
 
     except Exception as e:

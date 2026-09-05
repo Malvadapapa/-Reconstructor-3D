@@ -38,7 +38,8 @@ class VideoIngestor:
     def process_video(
         self,
         video_path: Path,
-        output_frames_dir: Path
+        output_frames_dir: Path,
+        allow_reuse: bool = True
     ) -> Dict:
         """
         Processes video file in a single fast pass:
@@ -49,6 +50,19 @@ class VideoIngestor:
         video_path = Path(video_path)
         output_frames_dir = Path(output_frames_dir)
         output_frames_dir.mkdir(parents=True, exist_ok=True)
+
+        # Check if frames already exist and can be reused
+        manifest_path = output_frames_dir.parent / "frames_manifest.json"
+        existing_frames = list(output_frames_dir.glob("frame_*.jpg"))
+        if allow_reuse and manifest_path.exists() and len(existing_frames) >= 5:
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f_m:
+                    manifest = json.load(f_m)
+                if manifest.get("total_extracted", 0) == len(existing_frames):
+                    print(f"[VideoIngestor] Reusing {len(existing_frames)} existing frames from {output_frames_dir}")
+                    return manifest
+            except Exception as e:
+                print(f"[VideoIngestor] Warning reading manifest: {e}")
 
         # Clear existing frames
         for f in output_frames_dir.glob("frame_*.jpg"):
