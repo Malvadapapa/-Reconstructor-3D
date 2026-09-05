@@ -10,170 +10,6 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-  <style>
-    /* ── Progress Bar Styles ── */
-    .progress-container {
-      margin-top: 12px;
-      background: rgba(30, 27, 75, 0.6);
-      border-radius: 10px;
-      padding: 14px 16px;
-      border: 1px solid rgba(99, 102, 241, 0.15);
-    }
-    .progress-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .progress-header .stage-label {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: #c4b5fd;
-    }
-    .progress-header .percent-label {
-      font-size: 1.1rem;
-      font-weight: 800;
-      color: #38bdf8;
-      font-variant-numeric: tabular-nums;
-    }
-    .progress-bar-track {
-      width: 100%;
-      height: 14px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 7px;
-      overflow: hidden;
-      position: relative;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      width: 0%;
-      border-radius: 7px;
-      background: linear-gradient(90deg, #6366f1 0%, #38bdf8 50%, #10b981 100%);
-      transition: width 0.4s ease;
-      position: relative;
-    }
-    .progress-bar-fill::after {
-      content: '';
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
-      animation: shimmer 1.5s infinite;
-    }
-    @keyframes shimmer {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
-    }
-    .progress-message {
-      margin-top: 8px;
-      font-size: 0.78rem;
-      color: var(--text-secondary);
-      min-height: 1.2em;
-    }
-    .progress-elapsed {
-      margin-top: 6px;
-      font-size: 0.72rem;
-      color: rgba(255,255,255,0.4);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .step-indicator.active {
-      animation: pulse-glow 1.5s ease-in-out infinite;
-    }
-    @keyframes pulse-glow {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5); }
-      50% { box-shadow: 0 0 12px 4px rgba(99, 102, 241, 0.3); }
-    }
-
-    .step-sub-progress {
-      display: inline-block;
-      width: 50px;
-      height: 4px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 2px;
-      overflow: hidden;
-      margin-left: 8px;
-      vertical-align: middle;
-    }
-    .step-sub-progress-fill {
-      height: 100%;
-      width: 0%;
-      background: #6366f1;
-      border-radius: 2px;
-      transition: width 0.3s ease;
-    }
-
-    /* ── History Projects Modal & Cards ── */
-    .history-card {
-      background: rgba(30, 27, 75, 0.4);
-      border: 1px solid rgba(99, 102, 241, 0.15);
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 8px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      transition: all 0.2s ease;
-    }
-    .history-card:hover {
-      background: rgba(99, 102, 241, 0.12);
-      border-color: rgba(99, 102, 241, 0.35);
-    }
-    .history-card.active-proj {
-      border-color: #38bdf8;
-      background: rgba(56, 189, 248, 0.1);
-    }
-    .history-title {
-      font-weight: 600;
-      font-size: 0.85rem;
-      color: #f1f5f9;
-      margin-bottom: 4px;
-    }
-    .history-meta {
-      font-size: 0.72rem;
-      color: var(--text-secondary);
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    /* Tabs */
-    .tab-nav {
-      display: flex;
-      gap: 8px;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-      margin-bottom: 14px;
-    }
-    .tab-btn {
-      background: none;
-      border: none;
-      color: var(--text-secondary);
-      font-size: 0.85rem;
-      font-weight: 600;
-      padding: 8px 14px;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s;
-    }
-    .tab-btn.active {
-      color: #38bdf8;
-      border-bottom-color: #38bdf8;
-    }
-
-    /* 3D Viewport styling */
-    #viewport3d {
-      width: 100%;
-      height: 440px;
-      position: relative;
-      background: radial-gradient(circle at center, #1e1b4b 0%, #090817 100%);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    #viewport3d canvas {
-      width: 100% !important;
-      height: 100% !important;
-      display: block;
-    }
-  </style>
 </head>
 <body>
 
@@ -194,273 +30,304 @@
       <a href="/api/download-marker-pdf" class="btn btn-secondary" target="_blank">
         📄 Descargar Patrón A4 (PDF)
       </a>
-      <button class="btn btn-secondary" onclick="loadProjectsList()">
+      <button class="btn btn-secondary" onclick="scrollToProjects()">
         📁 Historial de Escaneos
       </button>
     </div>
   </header>
 
-  <!-- Dashboard Grid -->
-  <div class="dashboard-grid">
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECCIÓN SUPERIOR: WORKFLOW DE CONVERSIÓN (3 COLUMNAS HORIZONTALES)
+       ═══════════════════════════════════════════════════════════════ -->
+  <div class="top-workflow-grid">
 
-    <!-- Left Column: Controls & Pipeline & History -->
-    <div class="left-col">
-
-      <!-- Tabs for Left Column -->
-      <div class="tab-nav">
-        <button id="tabBtnNew" class="tab-btn active" onclick="switchLeftTab('new')">📹 Nuevo Escaneo</button>
-        <button id="tabBtnHistory" class="tab-btn" onclick="switchLeftTab('history')">📁 Historial de Proyectos (<span id="historyCount">0</span>)</button>
+    <!-- Card 1: Carga de Video -->
+    <div class="card">
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>📹</span>
+          <span>1. Entrada de Video</span>
+        </div>
+        <span style="font-size: 0.72rem; color: #38bdf8; font-weight: 700; background: rgba(56, 189, 248, 0.1); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.2);">Paso 1/3</span>
       </div>
-
-      <!-- Tab 1: New Scan Form -->
-      <div id="tabContentNew">
-        <!-- Step 1: Upload Video -->
-        <div class="card">
-          <h2 class="card-title">📹 1. Cargar Video de Escaneo</h2>
-          <div id="dropzone" class="dropzone" onclick="document.getElementById('videoFileInput').click()">
-            <div class="dropzone-icon">📁</div>
-            <p><strong>Arrastra un video aquí</strong> o haz clic para seleccionar</p>
-            <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">Soporta .mp4, .mov (Botella u objeto sobre marcador)</p>
-            <input type="file" id="videoFileInput" accept="video/mp4,video/quicktime,video/avi" style="display: none;" onchange="handleFileSelect(this)">
-          </div>
-          <div id="fileSelectedInfo" style="margin-top: 10px; font-size: 0.85rem; color: #38bdf8; display: none;"></div>
-        </div>
-
-        <!-- Step 2: Settings -->
-        <div class="card">
-          <h2 class="card-title">⚙️ 2. Parámetros de Calibración</h2>
-          <div class="form-group">
-            <label>Tamaño del Marcador (mm)</label>
-            <input type="number" id="markerSize" class="form-control" value="50.0" step="0.5">
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div class="form-group">
-              <label>FPS Extracción</label>
-              <input type="number" id="targetFps" class="form-control" value="4.0" step="0.5">
-            </div>
-            <div class="form-group">
-              <label>Filtro Blur (Var)</label>
-              <input type="number" id="blurVar" class="form-control" value="30.0" step="5">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Profundidad Poisson (Malla)</label>
-            <input type="number" id="poissonDepth" class="form-control" value="8" min="7" max="11">
-          </div>
-
-          <!-- Módulos Avanzados (Neural & Texture) -->
-          <div style="border-top: 1px solid rgba(99, 102, 241, 0.2); margin-top: 14px; padding-top: 12px; margin-bottom: 14px;">
-            <div style="font-size: 0.8rem; font-weight: 700; color: #a5b4fc; margin-bottom: 8px;">Módulos Avanzados</div>
-            
-            <div style="margin-bottom: 8px;">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
-                <input type="checkbox" id="enableNeural" style="accent-color: #6366f1; width: 16px; height: 16px;">
-                <span>🧠 DISK + LightGlue (Neural Matcher)</span>
-              </label>
-              <div style="font-size: 0.72rem; color: var(--text-secondary); margin-left: 24px; margin-top: 2px;">
-                Emparejamiento denso con transformers para superficies sin textura o biológicas.
-              </div>
-            </div>
-
-            <div style="margin-bottom: 8px;">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
-                <input type="checkbox" id="enableTexture" checked style="accent-color: #6366f1; width: 16px; height: 16px;" onchange="document.getElementById('atlasResContainer').style.display = this.checked ? 'block' : 'none'">
-                <span>🎨 Texturizado UV Fotorealista</span>
-              </label>
-              <div style="font-size: 0.72rem; color: var(--text-secondary); margin-left: 24px; margin-top: 2px;">
-                Desenrollado xatlas y proyección multicámara para renderizado en color real.
-              </div>
-            </div>
-
-            <div id="atlasResContainer" style="margin-left: 24px; margin-top: 6px;">
-              <label style="font-size: 0.75rem; color: var(--text-secondary);">Resolución Atlas UV</label>
-              <select id="atlasRes" class="form-control" style="font-size: 0.8rem; padding: 4px 8px; margin-top: 2px;">
-                <option value="2048" selected>2048 × 2048 px (Recomendado)</option>
-                <option value="4096">4096 × 4096 px (Ultra HD)</option>
-                <option value="1024">1024 × 1024 px (Rápido)</option>
-              </select>
-            </div>
-          </div>
-
-          <button id="runBtn" class="btn btn-primary" onclick="startProcessing()" disabled>
-            🚀 Iniciar Reconstrucción 3D
-          </button>
-        </div>
-
-        <!-- Pipeline Steps Tracker -->
-        <div class="card">
-          <h2 class="card-title">⚡ Progreso del Pipeline</h2>
-
-          <!-- Global Progress Bar -->
-          <div class="progress-container" id="globalProgressContainer" style="display: none;">
-            <div class="progress-header">
-              <span class="stage-label" id="globalStageLabel">Preparando...</span>
-              <span class="percent-label" id="globalPercentLabel">0%</span>
-            </div>
-            <div class="progress-bar-track">
-              <div class="progress-bar-fill" id="globalProgressFill"></div>
-            </div>
-            <div class="progress-message" id="globalProgressMsg">Subiendo video al servidor...</div>
-            <div class="progress-elapsed" id="globalElapsed">⏱️ 0:00</div>
-          </div>
-
-          <div style="margin-top: 14px;">
-            <div class="pipeline-step">
-              <div id="step-1" class="step-indicator">1</div>
-              <div style="flex: 1;">
-                <div style="font-weight: 600; font-size: 0.85rem;">Extracción & Filtro de Desenfoque
-                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-1-bar"></span></span>
-                </div>
-                <div id="step-1-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
-              </div>
-            </div>
-            <div class="pipeline-step">
-              <div id="step-2" class="step-indicator">2</div>
-              <div style="flex: 1;">
-                <div style="font-weight: 600; font-size: 0.85rem;">Structure from Motion (COLMAP)
-                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-2-bar"></span></span>
-                </div>
-                <div id="step-2-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
-              </div>
-            </div>
-            <div class="pipeline-step">
-              <div id="step-3" class="step-indicator">3</div>
-              <div style="flex: 1;">
-                <div style="font-weight: 600; font-size: 0.85rem;">Escalado Métrico (AprilTag)
-                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-3-bar"></span></span>
-                </div>
-                <div id="step-3-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
-              </div>
-            </div>
-            <div class="pipeline-step">
-              <div id="step-4" class="step-indicator">4</div>
-              <div style="flex: 1;">
-                <div style="font-weight: 600; font-size: 0.85rem;">Generación de Malla STL (Poisson)
-                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-4-bar"></span></span>
-                </div>
-                <div id="step-4-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
-              </div>
-            </div>
-            <div class="pipeline-step">
-              <div id="step-5" class="step-indicator">5</div>
-              <div style="flex: 1;">
-                <div style="font-weight: 600; font-size: 0.85rem;">Slicing & Medición de Perímetros
-                  <span class="step-sub-progress"><span class="step-sub-progress-fill" id="step-5-bar"></span></span>
-                </div>
-                <div id="step-5-desc" style="font-size: 0.75rem; color: var(--text-secondary);">En espera...</div>
-              </div>
-            </div>
-          </div>
-
-          <div style="margin-top: 14px;">
-            <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600;">TERMINAL LOGS</div>
-            <div id="terminal" class="terminal-log">Esperando video para procesar...</div>
-          </div>
-        </div>
+      <div id="dropzone" class="dropzone" onclick="document.getElementById('videoFileInput').click()">
+        <div class="dropzone-icon">📥</div>
+        <p style="font-size: 0.88rem; font-weight: 700; color: #f8fafc;">Arrastra un video aquí</p>
+        <p style="font-size: 0.74rem; color: var(--text-secondary); margin-top: 4px;">o haz clic para explorar (.mp4, .mov)</p>
+        <input type="file" id="videoFileInput" accept="video/mp4,video/quicktime,video/avi" style="display: none;" onchange="handleFileSelect(this)">
       </div>
-
-      <!-- Tab 2: Scan History Explorer -->
-      <div id="tabContentHistory" style="display: none;">
-        <div class="card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <h2 class="card-title" style="margin-bottom: 0;">📁 Escaneos Anteriores</h2>
-            <button class="btn btn-secondary" onclick="loadProjectsList()" style="font-size: 0.75rem; padding: 4px 8px;">🔄 Actualizar</button>
-          </div>
-          <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 12px;">
-            Haz clic en <strong>Ver en Visor</strong> para cargar cualquier modelo STL generado previamente.
-          </p>
-          <div id="projectsListContainer" style="max-height: 550px; overflow-y: auto;">
-            <div style="text-align: center; color: var(--text-secondary); padding: 20px;">Cargando historial...</div>
-          </div>
-        </div>
+      <div id="fileSelectedInfo" style="margin-top: 10px; font-size: 0.8rem; color: #38bdf8; font-weight: 600; padding: 6px 10px; background: rgba(56, 189, 248, 0.1); border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2); display: none;"></div>
+      <div style="margin-top: auto; padding-top: 10px; font-size: 0.72rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+        <span>💡</span>
+        <span>Recomendado: 360° orbital continuo a 40-60 cm</span>
       </div>
-
     </div>
 
-    <!-- Right Column: 3D Viewer & Measurements -->
-    <div class="right-col">
-
-      <!-- 3D Viewport Card -->
-      <div class="card viewer-card">
-        <div id="viewport3d"></div>
-
-        <div class="viewer-toolbar">
-          <div class="toolbar-group">
-            <button class="btn btn-secondary" onclick="toggleWireframe()">🕸️ Wireframe</button>
-            <button class="btn btn-secondary" onclick="toggleSlices()">📏 Secciones (Slices)</button>
-            <button class="btn btn-secondary" onclick="toggleAutoRotate()">🔄 Auto-Giro</button>
-            <button class="btn btn-secondary" onclick="resetView()">🎯 Centrar</button>
-            <button id="viewModeBtn" class="btn btn-secondary" onclick="toggleViewMode()" style="display: none; color: #38bdf8; font-weight: 700;">🎨 Textura / Sólido</button>
-          </div>
-          <div class="toolbar-group" id="downloadGroup" style="display: none;">
-            <a id="downloadStlBtn" class="btn btn-secondary" style="color: #10b981; font-weight: 700;">
-              💾 Descargar STL
-            </a>
-            <a id="downloadGlbBtn" class="btn btn-secondary" style="color: #38bdf8; font-weight: 700; display: none;">
-              🎨 Descargar GLB
-            </a>
-          </div>
+    <!-- Card 2: Calibración & Parámetros -->
+    <div class="card">
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>⚙️</span>
+          <span>2. Parámetros & Módulos</span>
         </div>
+        <span style="font-size: 0.72rem; color: #a5b4fc; font-weight: 700; background: rgba(165, 180, 252, 0.1); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(165, 180, 252, 0.2);">Paso 2/3</span>
+      </div>
 
-        <div id="viewer-status" class="viewer-info-overlay">
-          Visor 3D listo. Carga un video o selecciona un proyecto del historial.
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="form-group">
+          <label>Marcador (mm)</label>
+          <input type="number" id="markerSize" class="form-control" value="50.0" step="0.5" title="Tamaño real del AprilTag exterior en mm">
+        </div>
+        <div class="form-group">
+          <label>Malla (Poisson)</label>
+          <input type="number" id="poissonDepth" class="form-control" value="8" min="7" max="11" title="Profundidad de árbol octree">
+        </div>
+        <div class="form-group">
+          <label>FPS Muestreo</label>
+          <input type="number" id="targetFps" class="form-control" value="4.0" step="0.5" title="Cuadros extraídos por segundo">
+        </div>
+        <div class="form-group">
+          <label>Filtro Blur</label>
+          <input type="number" id="blurVar" class="form-control" value="30.0" step="5" title="Varianza mínima Laplaciana para nitidez">
         </div>
       </div>
 
-      <!-- Measurements & Validation Card -->
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h2 class="card-title" style="margin-bottom: 0;">📊 3. Reporte de Medidas Extraídas (Slicing)</h2>
-          <span id="volumeBadge" class="badge-tag" style="display: none;">Volumen: -- cm³</span>
+      <!-- Módulos Avanzados Compactos -->
+      <div style="background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(99, 102, 241, 0.15); border-radius: 8px; padding: 8px 10px; margin: 6px 0 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.76rem; font-weight: 700; color: #c7d2fe; margin-bottom: 0;">
+            <input type="checkbox" id="enableNeural" style="accent-color: #6366f1; width: 14px; height: 14px;">
+            <span>🧠 DISK + LightGlue (Neural)</span>
+          </label>
+          <span style="font-size: 0.68rem; color: var(--text-muted);">Biomédico / Liso</span>
         </div>
 
-        <!-- Ground Truth Caliper Comparator -->
-        <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
-          <div style="font-size: 0.8rem; font-weight: 700; color: #818cf8; margin-bottom: 8px; text-transform: uppercase;">
-            🧪 Comparación con Calibre Real (Ground Truth)
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.76rem; font-weight: 700; color: #bae6fd; margin-bottom: 0;">
+            <input type="checkbox" id="enableTexture" checked style="accent-color: #6366f1; width: 14px; height: 14px;" onchange="document.getElementById('atlasResContainer').style.display = this.checked ? 'block' : 'none'">
+            <span>🎨 Texturizado UV (xatlas)</span>
+          </label>
+          <div id="atlasResContainer">
+            <select id="atlasRes" class="form-control" style="font-size: 0.72rem; padding: 2px 6px; height: 26px;">
+              <option value="2048" selected>Atlas 2K</option>
+              <option value="4096">Atlas 4K</option>
+              <option value="1024">Atlas 1K</option>
+            </select>
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: flex-end;">
-            <div>
-              <label style="font-size: 0.75rem; color: var(--text-secondary);">Altura Calibre (mm)</label>
-              <input type="number" id="caliperHeight" class="form-control" placeholder="Ej: 215.0" step="0.1">
-            </div>
-            <div>
-              <label style="font-size: 0.75rem; color: var(--text-secondary);">Diámetro Calibre (mm)</label>
-              <input type="number" id="caliperDiam" class="form-control" placeholder="Ej: 64.5" step="0.1">
-            </div>
-            <div>
-              <label style="font-size: 0.75rem; color: var(--text-secondary);">Perímetro Cinta (mm)</label>
-              <input type="number" id="caliperPerim" class="form-control" placeholder="Ej: 202.5" step="0.1">
-            </div>
-            <button class="btn btn-secondary" onclick="compareCaliper()">Calcular Error</button>
-          </div>
-          <div id="caliperResults" style="margin-top: 10px; font-size: 0.85rem; display: none;"></div>
-        </div>
-
-        <!-- Slices Table -->
-        <div style="max-height: 260px; overflow-y: auto;">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Altura Z (mm)</th>
-                <th>Perímetro (mm)</th>
-                <th>Área (mm²)</th>
-                <th>Diámetro Eq. (mm)</th>
-                <th>Ancho X (mm)</th>
-                <th>Prof. Y (mm)</th>
-              </tr>
-            </thead>
-            <tbody id="slicesTableBody">
-              <tr>
-                <td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 24px;">
-                  No hay datos aún. Ejecuta el pipeline o carga un proyecto anterior.
-                </td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
+      <button id="runBtn" class="btn btn-primary" onclick="startProcessing()" disabled style="margin-top: auto;">
+        🚀 Iniciar Reconstrucción 3D
+      </button>
+    </div>
+
+    <!-- Card 3: Progreso & Telemetría Detallada -->
+    <div class="card">
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>⚡</span>
+          <span>3. Progreso del Pipeline</span>
+        </div>
+        <span id="globalElapsed" class="progress-elapsed" style="font-size: 0.78rem;">⏱️ 0:00</span>
+      </div>
+
+      <!-- Master Progress Bar with big percentage -->
+      <div class="progress-container" id="globalProgressContainer">
+        <div class="progress-header">
+          <span class="stage-label" id="globalStageLabel">Listo para iniciar</span>
+          <span class="percent-label" id="globalPercentLabel">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="globalProgressFill"></div>
+        </div>
+        <div class="progress-meta-row">
+          <div class="progress-message" id="globalProgressMsg">Selecciona o arrastra un video arriba</div>
+          <span id="activeStageBadge" style="font-size: 0.7rem; color: #94a3b8; font-weight: 600;">En espera</span>
+        </div>
+      </div>
+
+      <!-- 5-Step Detailed Progress Rows with explicit % badges -->
+      <div class="steps-wrapper">
+        <div class="pipeline-step">
+          <div id="step-1" class="step-indicator">1</div>
+          <div class="step-body">
+            <div class="step-title-line">
+              <span>Extracción & Nitidez</span>
+              <span id="step-1-pct" class="step-pct-badge">0%</span>
+            </div>
+            <div class="step-desc-line" id="step-1-desc">En espera...</div>
+            <div class="step-sub-progress"><span class="step-sub-progress-fill" id="step-1-bar"></span></div>
+          </div>
+        </div>
+
+        <div class="pipeline-step">
+          <div id="step-2" class="step-indicator">2</div>
+          <div class="step-body">
+            <div class="step-title-line">
+              <span>Structure from Motion (SfM)</span>
+              <span id="step-2-pct" class="step-pct-badge">0%</span>
+            </div>
+            <div class="step-desc-line" id="step-2-desc">En espera...</div>
+            <div class="step-sub-progress"><span class="step-sub-progress-fill" id="step-2-bar"></span></div>
+          </div>
+        </div>
+
+        <div class="pipeline-step">
+          <div id="step-3" class="step-indicator">3</div>
+          <div class="step-body">
+            <div class="step-title-line">
+              <span>Escalado Métrico AprilTag</span>
+              <span id="step-3-pct" class="step-pct-badge">0%</span>
+            </div>
+            <div class="step-desc-line" id="step-3-desc">En espera...</div>
+            <div class="step-sub-progress"><span class="step-sub-progress-fill" id="step-3-bar"></span></div>
+          </div>
+        </div>
+
+        <div class="pipeline-step">
+          <div id="step-4" class="step-indicator">4</div>
+          <div class="step-body">
+            <div class="step-title-line">
+              <span>Malla STL & Textura UV</span>
+              <span id="step-4-pct" class="step-pct-badge">0%</span>
+            </div>
+            <div class="step-desc-line" id="step-4-desc">En espera...</div>
+            <div class="step-sub-progress"><span class="step-sub-progress-fill" id="step-4-bar"></span></div>
+          </div>
+        </div>
+
+        <div class="pipeline-step">
+          <div id="step-5" class="step-indicator">5</div>
+          <div class="step-body">
+            <div class="step-title-line">
+              <span>Slicing & Medición</span>
+              <span id="step-5-pct" class="step-pct-badge">0%</span>
+            </div>
+            <div class="step-desc-line" id="step-5-desc">En espera...</div>
+            <div class="step-sub-progress"><span class="step-sub-progress-fill" id="step-5-bar"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Collapsible Terminal Console -->
+      <button type="button" class="terminal-toggle-btn" onclick="toggleTerminal()">
+        <span>💻</span>
+        <span id="terminalToggleText">Mostrar Terminal Logs</span>
+      </button>
+      <div id="terminal" class="terminal-log" style="display: none;">Esperando video para procesar...</div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       SECCIÓN INFERIOR: VISOR 3D A ANCHO COMPLETO (FULL-WIDTH)
+       ═══════════════════════════════════════════════════════════════ -->
+  <div class="card viewer-card">
+    <div id="viewport3d"></div>
+
+    <div class="viewer-toolbar">
+      <div class="toolbar-group">
+        <button class="btn btn-secondary" onclick="toggleWireframe()">🕸️ Wireframe</button>
+        <button class="btn btn-secondary" onclick="toggleSlices()">📏 Secciones (Slices)</button>
+        <button class="btn btn-secondary" onclick="toggleAutoRotate()">🔄 Auto-Giro</button>
+        <button class="btn btn-secondary" onclick="resetView()">🎯 Centrar</button>
+        <button id="viewModeBtn" class="btn btn-secondary" onclick="toggleViewMode()" style="display: none; color: #38bdf8; font-weight: 700;">🎨 Textura / Sólido</button>
+      </div>
+      <div class="toolbar-group" id="downloadGroup" style="display: none;">
+        <a id="downloadStlBtn" class="btn btn-secondary" style="color: #10b981; font-weight: 700;">
+          💾 Descargar STL
+        </a>
+        <a id="downloadGlbBtn" class="btn btn-secondary" style="color: #38bdf8; font-weight: 700; display: none;">
+          🎨 Descargar GLB
+        </a>
+      </div>
+    </div>
+
+    <div id="viewer-status" class="viewer-info-overlay">
+      <span>Visor 3D listo. Carga un video o selecciona un proyecto del historial.</span>
+      <span id="volumeBadge" class="badge-tag" style="display: none;">Volumen: -- cm³</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       PANELES GEMELOS: REPORTES & HISTORIAL DE PROYECTOS
+       ═══════════════════════════════════════════════════════════════ -->
+  <div class="bottom-panels-grid">
+
+    <!-- Panel Izquierdo: Medidas & Comparador de Calibre -->
+    <div class="card">
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>📊</span>
+          <span>Reporte de Medidas Extraídas (Slicing)</span>
+        </div>
+      </div>
+
+      <!-- Ground Truth Caliper Comparator -->
+      <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+        <div style="font-size: 0.76rem; font-weight: 700; color: #818cf8; margin-bottom: 8px; text-transform: uppercase;">
+          🧪 Comparación con Calibre Real (Ground Truth)
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; align-items: flex-end;">
+          <div>
+            <label style="font-size: 0.7rem; color: var(--text-secondary);">Altura Real (mm)</label>
+            <input type="number" id="caliperHeight" class="form-control" placeholder="Ej: 215.0" step="0.1">
+          </div>
+          <div>
+            <label style="font-size: 0.7rem; color: var(--text-secondary);">Diámetro Real (mm)</label>
+            <input type="number" id="caliperDiam" class="form-control" placeholder="Ej: 64.5" step="0.1">
+          </div>
+          <div>
+            <label style="font-size: 0.7rem; color: var(--text-secondary);">Perímetro (mm)</label>
+            <input type="number" id="caliperPerim" class="form-control" placeholder="Ej: 202.5" step="0.1">
+          </div>
+          <button class="btn btn-secondary" onclick="compareCaliper()">Calcular Error</button>
+        </div>
+        <div id="caliperResults" style="margin-top: 10px; font-size: 0.8rem; display: none;"></div>
+      </div>
+
+      <!-- Slices Table -->
+      <div style="max-height: 280px; overflow-y: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Altura Z (mm)</th>
+              <th>Perímetro (mm)</th>
+              <th>Área (mm²)</th>
+              <th>Diám. Eq (mm)</th>
+              <th>Ancho X (mm)</th>
+              <th>Prof. Y (mm)</th>
+            </tr>
+          </thead>
+          <tbody id="slicesTableBody">
+            <tr>
+              <td colspan="6" style="text-align: center; color: var(--text-secondary); padding: 24px;">
+                No hay datos aún. Ejecuta el pipeline o selecciona un proyecto del historial.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Panel Derecho: Historial de Proyectos -->
+    <div class="card" id="projectsHistoryCard">
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>📁</span>
+          <span>Historial de Escaneos (<span id="historyCount">0</span>)</span>
+        </div>
+        <button class="btn btn-secondary" onclick="loadProjectsList()" style="font-size: 0.72rem; padding: 4px 8px;">
+          🔄 Actualizar
+        </button>
+      </div>
+      <p style="font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 12px;">
+        Haz clic en <strong>Ver en Visor</strong> para cargar instantáneamente cualquier modelo 3D previo.
+      </p>
+      <div id="projectsListContainer" style="max-height: 380px; overflow-y: auto; padding-right: 4px;">
+        <div style="text-align: center; color: var(--text-secondary); padding: 24px;">Cargando historial...</div>
+      </div>
     </div>
 
   </div>
@@ -833,17 +700,17 @@
     controls.update();
   }
 
-  // ── Tabs Switching ──
-  function switchLeftTab(tab) {
-    document.getElementById('tabBtnNew').classList.toggle('active', tab === 'new');
-    document.getElementById('tabBtnHistory').classList.toggle('active', tab === 'history');
-    document.getElementById('tabContentNew').style.display = tab === 'new' ? 'block' : 'none';
-    document.getElementById('tabContentHistory').style.display = tab === 'history' ? 'block' : 'none';
-
-    if (tab === 'history') {
-      loadProjectsList();
+  // ── Scroll to Projects History ──
+  function scrollToProjects() {
+    loadProjectsList();
+    const el = document.getElementById('projectsHistoryCard');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.style.borderColor = '#38bdf8';
+      setTimeout(() => { el.style.borderColor = ''; }, 1800);
     }
   }
+
 
   // ── Load Projects History ──
   async function loadProjectsList() {
@@ -1011,26 +878,54 @@
     }
   }
 
+  function toggleTerminal() {
+    const term = document.getElementById('terminal');
+    const txt = document.getElementById('terminalToggleText');
+    if (!term) return;
+    const isHidden = term.style.display === 'none';
+    term.style.display = isHidden ? 'block' : 'none';
+    if (txt) txt.innerText = isHidden ? 'Ocultar Terminal Logs' : 'Mostrar Terminal Logs';
+  }
+
   function setStepStatus(stepNum, status, desc) {
     const ind = document.getElementById(`step-${stepNum}`);
     const descEl = document.getElementById(`step-${stepNum}-desc`);
+    const pctBadge = document.getElementById(`step-${stepNum}-pct`);
     if (desc && descEl) descEl.innerText = desc;
     if (ind) {
       ind.className = 'step-indicator';
-      if (status === 'active') ind.classList.add('active');
-      else if (status === 'done') ind.classList.add('done');
+      if (status === 'active') {
+        ind.classList.add('active');
+        if (pctBadge) pctBadge.className = 'step-pct-badge active';
+      } else if (status === 'done') {
+        ind.classList.add('done');
+        if (pctBadge) {
+          pctBadge.className = 'step-pct-badge done';
+          pctBadge.innerText = '100%';
+        }
+      }
     }
   }
 
   function setStepSubProgress(stepNum, percent) {
     const bar = document.getElementById(`step-${stepNum}-bar`);
     if (bar) bar.style.width = percent + '%';
+    const pctBadge = document.getElementById(`step-${stepNum}-pct`);
+    if (pctBadge) {
+      pctBadge.innerText = Math.round(percent) + '%';
+      if (percent >= 100) {
+        pctBadge.className = 'step-pct-badge done';
+      } else if (percent > 0) {
+        pctBadge.className = 'step-pct-badge active';
+      } else {
+        pctBadge.className = 'step-pct-badge';
+      }
+    }
   }
 
   function updateGlobalProgress(stage, stagePercent, message) {
     const container = document.getElementById('globalProgressContainer');
     if (!container) return;
-    container.style.display = 'block';
 
     const offset = STAGE_OFFSETS[stage] || 0;
     const weight = STAGE_WEIGHTS[stage] || 10;
@@ -1040,6 +935,12 @@
     document.getElementById('globalProgressFill').style.width = globalPercent + '%';
     document.getElementById('globalStageLabel').innerText = STAGE_NAMES[stage] || 'Procesando...';
     document.getElementById('globalProgressMsg').innerText = message;
+
+    const badge = document.getElementById('activeStageBadge');
+    if (badge) {
+      badge.innerText = `Etapa ${stage}/5 (${Math.round(stagePercent)}%)`;
+      badge.style.color = '#38bdf8';
+    }
   }
 
   function startElapsedTimer() {
@@ -1065,6 +966,11 @@
     for (let i = 1; i <= 5; i++) {
       setStepStatus(i, '', 'En espera...');
       setStepSubProgress(i, 0);
+    }
+    const badge = document.getElementById('activeStageBadge');
+    if (badge) {
+      badge.innerText = 'Iniciando...';
+      badge.style.color = '#94a3b8';
     }
   }
 
@@ -1153,6 +1059,11 @@
           document.getElementById('globalProgressFill').style.background = 'linear-gradient(90deg, #10b981, #38bdf8)';
           document.getElementById('globalStageLabel').innerText = '🎉 ¡Completado!';
           document.getElementById('globalProgressMsg').innerText = message;
+          const badge = document.getElementById('activeStageBadge');
+          if (badge) {
+            badge.innerText = '🎉 ¡Completado!';
+            badge.style.color = '#10b981';
+          }
 
           for (let i = 1; i <= 5; i++) {
             setStepStatus(i, 'done');
