@@ -259,8 +259,8 @@
       </div>
     </div>
 
-    <div id="viewer-status" class="viewer-info-overlay">
-      <span>Visor 3D listo. Carga un video o selecciona un proyecto del historial.</span>
+    <div class="viewer-info-overlay">
+      <span id="viewer-status">Visor 3D listo. Carga un video o selecciona un proyecto del historial.</span>
       <span id="volumeBadge" class="badge-tag" style="display: none;">Volumen: -- cm³</span>
     </div>
   </div>
@@ -737,11 +737,13 @@
 
       if (!data.success || !data.projects || data.projects.length === 0) {
         container.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">No hay escaneos anteriores en el historial.</div>';
-        document.getElementById('historyCount').innerText = '0';
+        const hc = document.getElementById('historyCount');
+        if (hc) hc.innerText = '0';
         return;
       }
 
-      document.getElementById('historyCount').innerText = data.projects.length;
+      const hc = document.getElementById('historyCount');
+      if (hc) hc.innerText = data.projects.length;
       let html = '';
 
       data.projects.forEach(p => {
@@ -832,8 +834,10 @@
       // Volume badge
       if (data.summary_report && data.summary_report.mesh_stats) {
         const volBadge = document.getElementById('volumeBadge');
-        volBadge.innerText = `Volumen: ${data.summary_report.mesh_stats.volume_cm3.toFixed(1)} cm³ | Altura: ${data.summary_report.mesh_dimensions_mm?.height_z?.toFixed(1) || '--'} mm`;
-        volBadge.style.display = 'inline-block';
+        if (volBadge) {
+          volBadge.innerText = `Volumen: ${data.summary_report.mesh_stats.volume_cm3.toFixed(1)} cm³ | Altura: ${data.summary_report.mesh_dimensions_mm?.height_z?.toFixed(1) || '--'} mm`;
+          volBadge.style.display = 'inline-block';
+        }
       }
 
     } catch (err) {
@@ -1123,8 +1127,10 @@
 
           if (data.summary_report) {
             const volBadge = document.getElementById('volumeBadge');
-            volBadge.innerText = `Volumen: ${data.summary_report.mesh_stats.volume_cm3.toFixed(1)} cm³ | Altura: ${data.summary_report.mesh_dimensions_mm.height_z.toFixed(1)} mm`;
-            volBadge.style.display = 'inline-block';
+            if (volBadge) {
+              volBadge.innerText = `Volumen: ${data.summary_report.mesh_stats.volume_cm3.toFixed(1)} cm³ | Altura: ${data.summary_report.mesh_dimensions_mm.height_z.toFixed(1)} mm`;
+              volBadge.style.display = 'inline-block';
+            }
           }
 
           evtSource.close();
