@@ -53,7 +53,13 @@ async def serve_dashboard():
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="index.html template not found.")
     with open(index_path, "r", encoding="utf-8") as f:
-        return f.read()
+        content = f.read()
+    response = HTMLResponse(content=content)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
 
 
 @app.get("/api/download-marker-pdf")

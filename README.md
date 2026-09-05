@@ -1,6 +1,6 @@
-# 🦿 Reconstructor Métrico 3D (RGB a STL Calibrado)
+# 📐 Reconstructor Métrico 3D (RGB a STL Calibrado)
 
-> **Una herramienta abierta de digitalización 3D y metrología submilimétrica que transforma videos comunes de smartphone en modelos tridimensionales calibrados en milímetros reales, pensada para órtesis biomédicas, férulas y prototipado físico.**
+> **Una herramienta abierta de digitalización 3D y metrología submilimétrica que transforma videos comunes de smartphone en modelos tridimensionales calibrados en milímetros reales, diseñada para digitalización 3D de alta precisión, ingeniería inversa y metrología dimensional.**
 
 **Estado del proyecto:** Versión `0.1.0` (Fase Pre-Beta / Investigación Aplicada)  
 **Licencia:** Código abierto bajo términos permisivos (MIT / BSD / Apache-2.0)  
@@ -9,7 +9,7 @@
 
 ## 💡 ¿De qué se trata este proyecto?
 
-Medir partes del cuerpo o piezas físicas para fabricar órtesis personalizadas suele plantear un dilema: las cintas métricas manuales introducen errores humanos y no capturan la curvatura anatómica real, mientras que los escáneres 3D clínicos e industriales son sumamente costosos y requieren hardware propietario.
+Medir objetos físicos, piezas mecánicas complejas o superficies para modelado 3D e inspección dimensional suele plantear un dilema: las herramientas manuales introducen errores humanos y no capturan la curvatura tridimensional real, mientras que los escáneres 3D industriales son sumamente costosos y requieren hardware propietario.
 
 El **Reconstructor Métrico 3D** nació para explorar una alternativa accesible: **utilizar la cámara que ya llevamos en el bolsillo**. 
 

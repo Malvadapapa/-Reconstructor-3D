@@ -339,7 +339,7 @@ def generate_pdf(output_path: Path):
     story.append(Paragraph("PROYECTO PERSONAL · INFORME MAESTRO DE INGENIERÍA & AUDITORÍA TÉCNICA", styles["CoverTag"]))
     story.append(Paragraph("Documentación Técnica, Arquitectura del Sistema y Bitácora de Ingeniería (Post-Mortem)", styles["CoverTitle"]))
     story.append(Paragraph(
-        "Reconstructor Métrico 3D (Video RGB de Smartphone a Modelo STL Calibrado para Ortesis, Férulas y Prototipos). Especificación técnica exhaustiva del pipeline de 5 etapas, fundamentos matemáticos, catálogo de procedencia y autoría de librerías, bitácora de 12 incidentes superados y validación metrológica experimental.",
+        "Reconstructor Métrico 3D (Video RGB de Smartphone a Modelo STL Calibrado para Modelos y Piezas 3D). Especificación técnica exhaustiva del pipeline de 5 etapas, fundamentos matemáticos, catálogo de procedencia y autoría de librerías, bitácora de 12 incidentes superados y validación metrológica experimental.",
         styles["CoverSubtitle"]
     ))
 
@@ -382,7 +382,7 @@ def generate_pdf(output_path: Path):
     
     story.append(Paragraph("1.1. Contexto y Propósito del MVP", styles["H2"]))
     story.append(Paragraph(
-        "El objetivo primario de esta aplicación, desarrollada por Cristian Vargas, es responder a una pregunta crítica de ingeniería biomédica: <i>¿Es factible sustituir la toma manual de medidas con cinta métrica y los costosos escáneres 3D clínicos mediante un smartphone convencional RGB para la fabricación de órtesis personalizadas?</i>",
+        "El objetivo primario de esta aplicación, desarrollada por Cristian Vargas, es responder a una pregunta crítica de visión artificial e ingeniería: <i>¿Es factible sustituir la toma manual de medidas con cinta métrica y los costosos escáneres 3D industriales mediante un smartphone convencional RGB para la digitalización y fabricación de modelos 3D precisos?</i>",
         styles["Body"]
     ))
     story.append(Paragraph(
@@ -766,7 +766,7 @@ def generate_pdf(output_path: Path):
          "El modelo de la mano generó una cáscara cóncava de 6.6 mm sin dedos definidos ni dorso.",
          "Violación de la hipótesis de cuerpo rígido por micro-temblores musculares en el aire, barrido lineal plano 2.5D frontal y ausencia total de marcadores de escala.",
          "Definición del Protocolo Clínico: apoyo rígido obligatorio del miembro sobre la plantilla, órbita circular 360° y texturizado dérmico con lápiz quirúrgico.",
-         "Establecimiento de las directrices operativas mandatorias para escaneos de ortesis."),
+         "Establecimiento de las directrices operativas mandatorias para escaneos de objetos y piezas."),
 
         (11, "Incompatibilidad de argumentos en constructor de MarkerDetector",
          "src/video_ingest.py, src/marker_detector.py",
@@ -887,9 +887,9 @@ def generate_pdf(output_path: Path):
     # ══════════════════════════════════════════════════════════════
     # ── 7. PROTOCOLO CLÍNICO Y OPERATIVO ESTÁNDAR (SOP) ──
     # ══════════════════════════════════════════════════════════════
-    story.append(Paragraph("7. Protocolo Clínico y Operativo Estándar (SOP) para Escaneo", styles["H1"]))
+    story.append(Paragraph("7. Protocolo Operativo Estándar (SOP) para Escaneo", styles["H1"]))
     story.append(Paragraph(
-        "Para garantizar repetibilidad dimensional y calidad submilimétrica en pacientes vivos destinados a ortesis de miembro superior:",
+        "Para garantizar repetibilidad dimensional y calidad submilimétrica en piezas y objetos físicos:",
         styles["Body"]
     ))
 
