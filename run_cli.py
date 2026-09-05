@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from src.config import PipelineConfig, MarkerConfig, VideoIngestConfig, SfMConfig, MeshConfig, SliceConfig
+from src.config import PipelineConfig, MarkerConfig, VideoIngestConfig, SfMConfig, MeshConfig, SliceConfig, NeuralMatcherConfig, TextureConfig
 from src.pipeline import VideoTo3DPipeline
 from src.marker_generator import create_marker_pdf, create_marker_png
 
@@ -22,6 +22,10 @@ def parse_args():
     parser.add_argument("--min-laplacian", type=float, default=80.0, help="Laplacian variance blur threshold (default: 80.0)")
     parser.add_argument("--poisson-depth", type=int, default=9, help="Poisson tree depth (default: 9)")
     parser.add_argument("--slice-step", type=float, default=10.0, help="Slicing interval in mm (default: 10.0)")
+    parser.add_argument("--neural", action="store_true", help="Use Neural Matcher (DISK + LightGlue) instead of classic SIFT")
+    parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda", "auto"], help="Computation device for neural matching (default: cpu)")
+    parser.add_argument("--texture", action="store_true", help="Bake photographic UV texture atlas and export textured GLB/OBJ")
+    parser.add_argument("--atlas-res", type=int, default=2048, choices=[1024, 2048, 4096], help="Dimension of square texture atlas (default: 2048)")
     parser.add_argument("--generate-markers", action="store_true", help="Generate printable AprilTag calibration targets (PDF & PNG)")
     return parser.parse_args()
 
@@ -55,13 +59,17 @@ def main():
         ingest=VideoIngestConfig(target_fps=args.fps, min_laplacian_var=args.min_laplacian),
         sfm=SfMConfig(),
         mesh=MeshConfig(poisson_depth=args.poisson_depth),
-        slice=SliceConfig(step_height_mm=args.slice_step)
+        slice=SliceConfig(step_height_mm=args.slice_step),
+        neural=NeuralMatcherConfig(enabled=args.neural, device=args.device),
+        texture=TextureConfig(enabled=args.texture, atlas_resolution=args.atlas_res)
     )
 
     pipeline = VideoTo3DPipeline(config)
     result = pipeline.run()
 
     print(f"\n[OK] STL exported to: {result.stl_model_path}")
+    if result.textured_glb_path:
+        print(f"[OK] Textured GLB exported to: {result.textured_glb_path}")
     print(f"[OK] Measurements saved to: {result.measurements_json_path}")
 
 

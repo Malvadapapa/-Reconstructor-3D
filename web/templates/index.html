@@ -9,6 +9,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <style>
     /* ── Progress Bar Styles ── */
     .progress-container {
@@ -247,6 +248,40 @@
             <input type="number" id="poissonDepth" class="form-control" value="8" min="7" max="11">
           </div>
 
+          <!-- Módulos Avanzados (Neural & Texture) -->
+          <div style="border-top: 1px solid rgba(99, 102, 241, 0.2); margin-top: 14px; padding-top: 12px; margin-bottom: 14px;">
+            <div style="font-size: 0.8rem; font-weight: 700; color: #a5b4fc; margin-bottom: 8px;">Módulos Avanzados</div>
+            
+            <div style="margin-bottom: 8px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
+                <input type="checkbox" id="enableNeural" style="accent-color: #6366f1; width: 16px; height: 16px;">
+                <span>🧠 DISK + LightGlue (Neural Matcher)</span>
+              </label>
+              <div style="font-size: 0.72rem; color: var(--text-secondary); margin-left: 24px; margin-top: 2px;">
+                Emparejamiento denso con transformers para superficies sin textura o biológicas.
+              </div>
+            </div>
+
+            <div style="margin-bottom: 8px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;">
+                <input type="checkbox" id="enableTexture" checked style="accent-color: #6366f1; width: 16px; height: 16px;" onchange="document.getElementById('atlasResContainer').style.display = this.checked ? 'block' : 'none'">
+                <span>🎨 Texturizado UV Fotorealista</span>
+              </label>
+              <div style="font-size: 0.72rem; color: var(--text-secondary); margin-left: 24px; margin-top: 2px;">
+                Desenrollado xatlas y proyección multicámara para renderizado en color real.
+              </div>
+            </div>
+
+            <div id="atlasResContainer" style="margin-left: 24px; margin-top: 6px;">
+              <label style="font-size: 0.75rem; color: var(--text-secondary);">Resolución Atlas UV</label>
+              <select id="atlasRes" class="form-control" style="font-size: 0.8rem; padding: 4px 8px; margin-top: 2px;">
+                <option value="2048" selected>2048 × 2048 px (Recomendado)</option>
+                <option value="4096">4096 × 4096 px (Ultra HD)</option>
+                <option value="1024">1024 × 1024 px (Rápido)</option>
+              </select>
+            </div>
+          </div>
+
           <button id="runBtn" class="btn btn-primary" onclick="startProcessing()" disabled>
             🚀 Iniciar Reconstrucción 3D
           </button>
@@ -355,10 +390,14 @@
             <button class="btn btn-secondary" onclick="toggleSlices()">📏 Secciones (Slices)</button>
             <button class="btn btn-secondary" onclick="toggleAutoRotate()">🔄 Auto-Giro</button>
             <button class="btn btn-secondary" onclick="resetView()">🎯 Centrar</button>
+            <button id="viewModeBtn" class="btn btn-secondary" onclick="toggleViewMode()" style="display: none; color: #38bdf8; font-weight: 700;">🎨 Textura / Sólido</button>
           </div>
           <div class="toolbar-group" id="downloadGroup" style="display: none;">
             <a id="downloadStlBtn" class="btn btn-secondary" style="color: #10b981; font-weight: 700;">
               💾 Descargar STL
+            </a>
+            <a id="downloadGlbBtn" class="btn btn-secondary" style="color: #38bdf8; font-weight: 700; display: none;">
+              🎨 Descargar GLB
             </a>
           </div>
         </div>
@@ -441,6 +480,10 @@
   let isWireframe = false;
   let showSlices = false;
   let autoRotate = false;
+  let currentModelType = 'stl';
+  let cachedStlUrl = null;
+  let cachedGlbUrl = null;
+  let cachedMeasurements = null;
 
   const STAGE_NAMES = {
     1: "Etapa 1/5 · Extracción de Frames",
@@ -547,7 +590,26 @@
     renderer.setSize(container.clientWidth, container.clientHeight);
   }
 
+  function disposeCurrentMesh() {
+    if (!currentMesh) return;
+    scene.remove(currentMesh);
+    currentMesh.traverse((child) => {
+      if (child.isMesh) {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+          else child.material.dispose();
+        }
+      }
+    });
+    currentMesh = null;
+  }
+
   function loadSTLModel(stlUrl, measurements) {
+    cachedStlUrl = stlUrl;
+    if (measurements) cachedMeasurements = measurements;
+    currentModelType = 'stl';
+
     const statusEl = document.getElementById('viewer-status');
     statusEl.innerHTML = '⏳ Cargando modelo STL en el visor...';
 
@@ -555,12 +617,7 @@
     loader.load(
       stlUrl,
       function (geometry) {
-        if (currentMesh) {
-          scene.remove(currentMesh);
-          currentMesh.geometry.dispose();
-          currentMesh.material.dispose();
-          currentMesh = null;
-        }
+        disposeCurrentMesh();
 
         // Clean & compute normals
         geometry.computeVertexNormals();
@@ -571,8 +628,6 @@
         const bbox = geometry.boundingBox;
         const size = new THREE.Vector3();
         bbox.getSize(size);
-        const center = new THREE.Vector3();
-        bbox.getCenter(center);
 
         // Place base on grid (Z=0)
         geometry.translate(0, 0, -bbox.min.z);
@@ -589,8 +644,15 @@
         currentMesh = new THREE.Mesh(geometry, material);
         scene.add(currentMesh);
 
+        // View mode switch button
+        const vmBtn = document.getElementById('viewModeBtn');
+        if (vmBtn && cachedGlbUrl) {
+          vmBtn.style.display = 'inline-block';
+          vmBtn.innerText = '🎨 Ver Texturizado (GLB)';
+        }
+
         // Build slice contours if measurements available
-        buildSliceVisuals(measurements, geometry);
+        buildSliceVisuals(cachedMeasurements);
 
         // Frame camera to object
         const maxDim = Math.max(size.x, size.y, size.z, 50);
@@ -613,7 +675,104 @@
     );
   }
 
-  function buildSliceVisuals(measurements, geometry) {
+  function loadGLBModel(glbUrl, measurements) {
+    cachedGlbUrl = glbUrl;
+    if (measurements) cachedMeasurements = measurements;
+    currentModelType = 'glb';
+
+    const statusEl = document.getElementById('viewer-status');
+    statusEl.innerHTML = '⏳ Cargando modelo GLB texturizado en el visor...';
+
+    const loader = new THREE.GLTFLoader();
+    loader.load(
+      glbUrl,
+      function (gltf) {
+        disposeCurrentMesh();
+
+        const model = gltf.scene;
+
+        // Compute overall bounding box
+        const bbox = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        bbox.getSize(size);
+        const center = new THREE.Vector3();
+        bbox.getCenter(center);
+
+        // Center on X and Y, align base to Z=0
+        model.position.x -= center.x;
+        model.position.y -= center.y;
+        model.position.z -= bbox.min.z;
+
+        let totalVertices = 0;
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (child.geometry && child.geometry.attributes.position) {
+              totalVertices += child.geometry.attributes.position.count;
+            }
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach(m => {
+                  m.wireframe = isWireframe;
+                  m.side = THREE.DoubleSide;
+                });
+              } else {
+                child.material.wireframe = isWireframe;
+                child.material.side = THREE.DoubleSide;
+              }
+            }
+          }
+        });
+
+        currentMesh = model;
+        scene.add(currentMesh);
+
+        // View mode switch button
+        const vmBtn = document.getElementById('viewModeBtn');
+        if (vmBtn) {
+          vmBtn.style.display = 'inline-block';
+          vmBtn.innerText = '🗿 Ver Sólido (STL)';
+        }
+
+        // Build slice contours if measurements available
+        buildSliceVisuals(cachedMeasurements);
+
+        // Frame camera to object
+        const maxDim = Math.max(size.x, size.y, size.z, 50);
+        camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
+        controls.target.set(0, 0, size.z / 2);
+        controls.update();
+
+        statusEl.innerHTML = `✅ <strong>Modelo GLB Texturizado Cargado</strong> | Dimensiones: ${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)} mm | Vértices: ${totalVertices.toLocaleString()}`;
+      },
+      function (xhr) {
+        if (xhr.lengthComputable) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          statusEl.innerHTML = `⏳ Descargando GLB: ${pct}%...`;
+        }
+      },
+      function (err) {
+        console.error("Error cargando GLB:", err);
+        statusEl.innerHTML = `⚠️ Error al cargar GLB texturizado. Cargando STL...`;
+        if (cachedStlUrl) loadSTLModel(cachedStlUrl, cachedMeasurements);
+      }
+    );
+  }
+
+  function toggleViewMode() {
+    if (currentModelType === 'glb') {
+      if (cachedStlUrl) {
+        loadSTLModel(cachedStlUrl, cachedMeasurements);
+      }
+    } else {
+      if (cachedGlbUrl) {
+        loadGLBModel(cachedGlbUrl, cachedMeasurements);
+      }
+    }
+  }
+
+  function buildSliceVisuals(measurements) {
     // Clear previous slices
     while (sliceGroup.children.length > 0) {
       const obj = sliceGroup.children[0];
@@ -639,8 +798,16 @@
 
   function toggleWireframe() {
     isWireframe = !isWireframe;
-    if (currentMesh && currentMesh.material) {
-      currentMesh.material.wireframe = isWireframe;
+    if (currentMesh) {
+      currentMesh.traverse((child) => {
+        if (child.isMesh && child.material) {
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => m.wireframe = isWireframe);
+          } else {
+            child.material.wireframe = isWireframe;
+          }
+        }
+      });
     }
   }
 
@@ -656,10 +823,10 @@
   }
 
   function resetView() {
-    if (!currentMesh) return;
-    currentMesh.geometry.computeBoundingBox();
+    if (!currentMesh || !camera || !controls) return;
+    const bbox = new THREE.Box3().setFromObject(currentMesh);
     const size = new THREE.Vector3();
-    currentMesh.geometry.boundingBox.getSize(size);
+    bbox.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z, 50);
     camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
     controls.target.set(0, 0, size.z / 2);
@@ -753,15 +920,27 @@
       const activeCard = document.getElementById(`card-${scanId}`);
       if (activeCard) activeCard.classList.add('active-proj');
 
-      // Load STL in Three.js
+      // Load Model in Three.js
       if (data.stl_model_path) {
-        const stlUrl = `/api/download-stl?path=${encodeURIComponent(data.stl_model_path)}`;
-        loadSTLModel(stlUrl, data.measurements);
+        cachedStlUrl = `/api/download-stl?path=${encodeURIComponent(data.stl_model_path)}`;
+        cachedGlbUrl = data.textured_glb_path ? `/api/download-glb?path=${encodeURIComponent(data.textured_glb_path)}` : null;
+        cachedMeasurements = data.measurements;
 
-        // Update download button
         const dlBtn = document.getElementById('downloadStlBtn');
-        dlBtn.href = stlUrl;
+        dlBtn.href = cachedStlUrl;
         document.getElementById('downloadGroup').style.display = 'flex';
+
+        const dlGlbBtn = document.getElementById('downloadGlbBtn');
+        if (cachedGlbUrl) {
+          dlGlbBtn.href = cachedGlbUrl;
+          dlGlbBtn.style.display = 'inline-block';
+          loadGLBModel(cachedGlbUrl, data.measurements);
+        } else {
+          dlGlbBtn.style.display = 'none';
+          const vmBtn = document.getElementById('viewModeBtn');
+          if (vmBtn) vmBtn.style.display = 'none';
+          loadSTLModel(cachedStlUrl, data.measurements);
+        }
       }
 
       // Populate measurements table
@@ -913,6 +1092,9 @@
     formData.append('target_fps', document.getElementById('targetFps').value);
     formData.append('min_laplacian_var', document.getElementById('blurVar').value);
     formData.append('poisson_depth', document.getElementById('poissonDepth').value);
+    formData.append('enable_neural', document.getElementById('enableNeural').checked ? 'true' : 'false');
+    formData.append('enable_texture', document.getElementById('enableTexture').checked ? 'true' : 'false');
+    formData.append('atlas_res', document.getElementById('atlasRes').value);
 
     try {
       logTerminal(`📤 Subiendo ${selectedFile.name}...`);
@@ -987,17 +1169,30 @@
             setStepStatus(5, 'done', `${data.summary_report.slices_extracted} secciones`);
           }
 
-          // Load STL into Three.js
-          const stlUrl = `/api/download-stl?path=${encodeURIComponent(data.stl_model_path)}`;
-          loadSTLModel(stlUrl, data.measurements);
+          // Load Model into Three.js
+          cachedStlUrl = `/api/download-stl?path=${encodeURIComponent(data.stl_model_path)}`;
+          cachedGlbUrl = data.textured_glb_path ? `/api/download-glb?path=${encodeURIComponent(data.textured_glb_path)}` : null;
+          cachedMeasurements = data.measurements;
+
+          // Setup download buttons
+          const dlBtn = document.getElementById('downloadStlBtn');
+          dlBtn.href = cachedStlUrl;
+          document.getElementById('downloadGroup').style.display = 'flex';
+
+          const dlGlbBtn = document.getElementById('downloadGlbBtn');
+          if (cachedGlbUrl) {
+            dlGlbBtn.href = cachedGlbUrl;
+            dlGlbBtn.style.display = 'inline-block';
+            loadGLBModel(cachedGlbUrl, data.measurements);
+          } else {
+            dlGlbBtn.style.display = 'none';
+            const vmBtn = document.getElementById('viewModeBtn');
+            if (vmBtn) vmBtn.style.display = 'none';
+            loadSTLModel(cachedStlUrl, data.measurements);
+          }
 
           // Populate table
           populateTable(data.measurements);
-
-          // Show download button
-          const dlBtn = document.getElementById('downloadStlBtn');
-          dlBtn.href = stlUrl;
-          document.getElementById('downloadGroup').style.display = 'flex';
 
           if (data.summary_report) {
             const volBadge = document.getElementById('volumeBadge');

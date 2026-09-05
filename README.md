@@ -1,123 +1,94 @@
 # 🦿 Reconstructor Métrico 3D (RGB a STL Calibrado)
 
-> **Digitalización 3D y metrología submilimétrica a partir de secuencias de video monocular de smartphone con marcadores AprilTag para ortesis biomédicas y prototipos.**
+> **Una herramienta abierta de digitalización 3D y metrología submilimétrica que transforma videos comunes de smartphone en modelos tridimensionales calibrados en milímetros reales, pensada para órtesis biomédicas, férulas y prototipado físico.**
 
-**Autor / Desarrollador:** **Cristian Vargas**  
-**Proyecto:** Prototipo Personal de Investigación y Desarrollo  
-**Versión:** 1.2.0  
-**Licencia:** MIT / BSD Permisiva  
+**Estado del proyecto:** Versión `0.1.0` (Fase Pre-Beta / Investigación Aplicada)  
+**Licencia:** Código abierto bajo términos permisivos (MIT / BSD / Apache-2.0)  
 
 ---
 
-## 📌 Descripción General
+## 💡 ¿De qué se trata este proyecto?
 
-El **Reconstructor Métrico 3D** es una solución de ingeniería de software, visión por computadora y metrología biomédica concebida para superar las limitaciones de las mediciones manuales con cinta métrica y la alta barrera de costos de los escáneres 3D clínicos industriales. 
+Medir partes del cuerpo o piezas físicas para fabricar órtesis personalizadas suele plantear un dilema: las cintas métricas manuales introducen errores humanos y no capturan la curvatura anatómica real, mientras que los escáneres 3D clínicos e industriales son sumamente costosos y requieren hardware propietario.
 
-Permite transformar un video continuo capturado con cualquier smartphone convencional (RGB monocular, sin requerir sensores LiDAR ni cámaras estéreo activas) en un **modelo tridimensional sólido estanco (*watertight*) en formato `.STL` y `.OBJ` con calibración métrica real en milímetros ($mm$)**, listo para fabricación aditiva (impresión 3D) o software CAD paramétrico.
+El **Reconstructor Métrico 3D** nació para explorar una alternativa accesible: **utilizar la cámara que ya llevamos en el bolsillo**. 
 
----
-
-## 🌟 Características Principales
-
-* ⚡ **Ingesta Inteligente de Video a 50+ FPS:** Muestreo temporal uniforme en 60 ventanas (0% a 100% de la duración) en una sola pasada secuencial continua (`cap.read()`). Evalúa cuantitativamente el desenfoque de movimiento mediante la **Varianza del Operador Laplaciano** ($\text{Var} > 80$) para extraer únicamente los fotogramas más nítidos (*cero motion blur*).
-* 🌐 **Structure from Motion (SfM) Robusto:** Motor fotogramétrico basado en **COLMAP** con emparejador secuencial temporal (`sequential_matcher`, $k=10$), triangulación epipolar y optimización global no lineal *Bundle Adjustment* con el solver Ceres (Google). Detección automática de aceleración GPU (CUDA) con fallback transparente a CPU multihilo.
-* 🎯 **Calibración Métrica Multi-Tag de Alta Precisión:** Detección subpíxel de esquinas con **Pupil-AprilTags** (familia `tag36h11`). Triangula las esquinas en el espacio 3D para resolver la ambigüedad de escala monocular, aplicando traslación rígida $[R \vert t]$ con compensación de offset para centrar el origen $(0,0,0)$ en el tablero físico con vector normal $+Z$ hacia las cámaras.
-* 🧊 **Mallado Poisson y Aislamiento de ROI:** Estimación de normales mediante $k$-vecinos más cercanos (**KNN**, $k=25$, invariante a escala previa). Reconstrucción estanca (*Screened Poisson Surface*, `depth = 8`), filtrado adaptativo de densidad, purga de coordenadas no numéricas (`NaN`) y recorte estricto de Región de Interés ($Z \ge 2.0\text{ mm}$ y radio horizontal $R \le 120\text{ mm}$) que extirpa la mesa y el suelo.
-* 📐 **Metrología Seccional Automatizada (Slicing):** Corte ortogonal de la malla STL cada $10\text{ mm}$ mediante **Trimesh** y **Shapely** (motor C++ GEOS). Integración de contornos cerrados 2D para derivar áreas seccionales (teorema de Green/Gauss), perímetros reales continuos y diámetros circulares equivalentes ($D_{\text{eq}} = 2\sqrt{A/\pi}$).
-* 🖥️ **Dashboard Web Interactivo con Telemetría SSE:** Servidor asíncrono **FastAPI** que emite eventos de progreso en tiempo real a 5 Hz vía *Server-Sent Events* (SSE). Frontend con visor 3D WebGL (**Three.js** + OrbitControls) con sombreado de estudio PBR, modo alambre (*Wireframe*), planos de corte dinámicos e historial de escaneos.
-* 💻 **CLI Integrada:** Interfaz de línea de comandos (`run_cli.py`) para procesamiento por lotes (*batch*), pruebas automatizadas y generación de patrones de calibración.
+Con solo grabar un video corto en órbita alrededor del objeto apoyado sobre una plantilla impresa de calibración (con marcadores AprilTag), el sistema reconstruye la geometría completa, calcula la escala milimétrica exacta y produce una **malla sólida estanca (*watertight*) en formato `.STL` y `.OBJ`**, lista para enviar a la impresora 3D o importar en cualquier software CAD.
 
 ---
 
-## 📊 Validación Metrológica Empírica
+## ✨ Puntos Clave del Pipeline
 
-El sistema fue validado experimentalmente frente a mediciones de control físico con **calibre pie de rey digital certificado**:
-
-| Caso de Estudio | Tipo de Objeto | Dimensión Real (Calibre) | Dimensión en Modelo 3D | Desviación Absoluta | Error Relativo | Dictamen Técnico |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Caso 1: Botella** | Cilindro plástico rígido | $70.00\text{ mm}$ | $70.16\text{ mm}$ | **$+0.16\text{ mm}$** | **$0.23\%$** | **Éxito Metrológico** |
-| **Caso 2: Taza Blanca** | Cerámica asimétrica con asa | $82.50\text{ mm}$ | $82.80\text{ mm}$ | **$+0.30\text{ mm}$** | **$0.36\%$** | **Éxito Metrológico** |
-| **Caso 3: Mano en el Aire** | Miembro biológico en suspensión | $\sim 180.00\text{ mm}$ | $6.60\text{ mm}$ | N/A | $> 95\%$ | **Fallo Didáctico** *(base del protocolo clínico)* |
-
-> [!NOTE]
-> El Caso 3 demostró la violación de la hipótesis de cuerpo rígido debido a micro-temblores musculares y la ausencia de órbita 360°, estableciendo el protocolo mandatorio de inmovilización sobre la plantilla de calibración física.
+* 📱 **Monocular y accesible:** Funciona con cualquier teléfono convencional. No depende de sensores LiDAR, proyectores infrarrojos ni cámaras estéreo especiales.
+* 💻 **Amigable con hardware estándar:** Diseñado para ejecutarse eficientemente tanto en computadoras portátiles con CPU convencional como en estaciones con aceleración gráfica opcional.
+* 🎯 **Escala real en milímetros (mm):** Gracias a la triangulación de marcadores ópticos AprilTag en el espacio 3D, el modelo resultante no tiene dimensiones arbitrarias, sino medidas físicas 1:1 listas para fabricación.
+* 🔍 **Filtro inteligente de fotogramas:** Analiza el desenfoque de movimiento mediante la varianza del operador Laplaciano, descartando cuadros borrosos para conservar únicamente tomas nítidas de 360°.
+* 📐 **Metrología transversal automática:** Realiza rebanado (*slicing*) geométrico cada 10 mm a lo largo del eje Z, extrayendo perímetros reales, áreas de sección y diámetros equivalentes para cotejar con calibres físicos.
+* 🌐 **Dashboard visual interactivo:** Incluye un servidor web local con telemetría en tiempo real (SSE) y visor 3D en el navegador con Three.js, visualización de planos de corte y exportación directa.
 
 ---
 
-## 🏗️ Arquitectura del Sistema (5 Etapas)
+## 🏗️ Cómo Funciona por Dentro (Paso a Paso)
+
+El flujo de reconstrucción se organiza en una cadena modular y transparente:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 FLUJO DEL PIPELINE DETERMINISTA                                  │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                               PIPELINE DE RECONSTRUCCIÓN                               │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
-   [ Etapa 1: Ingesta de Video ]
-   ├── Lectura secuencial continua a 50+ FPS en memoria RAM (OpenCV).
-   ├── Segmentación en 60 ventanas temporales equivalentes (0% a 100% de duración).
-   └── Selección del fotograma con máxima varianza Laplaciana (Var > 80, cero blur).
+ 1. Ingesta de Video y Selección de Cuadros (OpenCV)
+    └── Divide el video en ventanas de tiempo uniformes y elige el cuadro más nítido de cada
+        segmento, eliminando el movimiento brusco y asegurando cobertura circular completa.
             │
             ▼
-   [ Etapa 2: COLMAP SfM ]
-   ├── Detección y descripción de puntos clave SIFT invariantes.
-   ├── Sequential Matcher con solapamiento temporal (overlap=10, cuadrático).
-   └── Bundle Adjustment incremental con Ceres Solver. Fallback transparente a CPU.
+ 2. Reconstrucción de Poses de Cámara y Puntos 3D (COLMAP)
+    └── Encuentra puntos característicos entre tomas y resuelve la posición espacial de cada
+        cámara junto con una nube de puntos dispersa inicial (Bundle Adjustment).
             │
             ▼
-   [ Etapa 3: Calibración Métrica Multi-Tag ]
-   ├── Detección subpíxel de esquinas AprilTag tag36h11 (Pupil-AprilTags).
-   ├── Triangulación epipolar 3D y cálculo del factor de escala (mm reales).
-   └── Matriz rígida [R|t] que traslada el origen (0,0,0) al centro de la hoja con normal +Z.
+ 3. Calibración Métrica y Alineación de Coordenadas (Pupil-AprilTags)
+    └── Localiza las esquinas de los marcadores fiduciarios en las imágenes, triangula su
+        posición 3D real y halla el factor de conversión exacto a milímetros, orientando el
+        suelo en Z = 0.
             │
             ▼
-   [ Etapa 4: Reconstrucción Poisson & ROI ]
-   ├── Estimación de normales invariante mediante KNN (k=25).
-   ├── Screened Poisson Surface Reconstruction (depth=8).
-   └── Poda de densidad, sanitización de NaNs y recorte ROI (Z >= 2 mm, R <= 120 mm).
+ 4. Generación de Malla y Cierre Estanco (Open3D)
+    └── Estima normales de superficie y aplica reconstrucción de Poisson, recortando la región
+        de interés (ROI) para aislar la pieza del plano de apoyo y generar un sólido imprimible.
             │
             ▼
-   [ Etapa 5: Rebanado y Metrología 2D ]
-   ├── Slicing planar ortogonal cada 10 mm (Trimesh / Shapely GEOS).
-   ├── Cálculo de polígonos cerrados, perímetros continuos y áreas de Gauss.
-   └── Exportación de STL binario watertight, OBJ y archivo de reporte JSON.
-            │
-            ▼
-┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│  • Backend FastAPI: API REST asíncrona + Streaming SSE a 5 Hz (sse-starlette).                   │
-│  • Frontend Three.js: Visor 3D orbital WebGL, Wireframe, Slicing e Historial de Escaneos.        │
-└──────────────────────────────────────────────────────────────────────────────────────────────────┘
+ 5. Análisis Geométrico Seccional (Trimesh & Shapely)
+    └── Corta la pieza a intervalos milimétricos regulares para extraer medidas clínicas,
+        perímetros de ajuste y volumen total en cm³.
 ```
 
 ---
 
-## 🛠️ Stack Tecnológico y Procedencia de Librerías
+## 📊 Ensayos Experimentales Iniciales
 
-Todas las librerías fueron seleccionadas bajo criterios de estabilidad computacional, precisión métrica y compatibilidad con licencias comerciales permisivas:
+Durante las pruebas de calibración en laboratorio, se evaluó la precisión del reconstructor contrastando las piezas impresas y modelos 3D contra mediciones con **calibre pie de rey digital certificado**:
 
-| Librería | Versión | Autor / Institución de Origen | Procedencia Oficial | Licencia |
-| :--- | :---: | :--- | :--- | :---: |
-| **OpenCV** | `>=4.8.0` | Gary Bradski, Vadim Pisarevsky / *Intel & OpenCV Foundation* | PyPI / `opencv/opencv-python` | Apache-2.0 |
-| **Pupil-AprilTags** | `>=1.0.4` | Prof. Edwin Olson (*UMich*) / *Pupil Labs GmbH* | PyPI / `pupil-labs/apriltags` | BSD-2-Clause |
-| **COLMAP** | `3.8 / 3.9` | Dr. Johannes Schönberger (*ETH Zürich*) & Jan-Michael Frahm (*UNC*) | GitHub / `colmap/colmap` (Win64) | BSD-3-Clause |
-| **Open3D** | `>=0.18.0` | Qian-Yi Zhou, Jaesik Park, Vladlen Koltun / *Intel Labs* | PyPI / `isl-org/Open3D` | MIT |
-| **Trimesh** | `>=4.0.0` | Michael Dawson-Haggerty & *Comunidad Python* | PyPI / `mikedh/trimesh` | MIT |
-| **Shapely** | `>=2.0.0` | Sean Gillies (*Toblerity*) / *Motor C++ GEOS (PostGIS/OGC)* | PyPI / `shapely/shapely` | BSD-3-Clause |
-| **FastAPI + Uvicorn** | `>=0.110 / >=0.28` | Sebastián Ramírez (`tiangolo`) / Tom Christie (*Encode*) | PyPI / `fastapi`, `uvicorn` | MIT / BSD-3 |
-| **SSE-Starlette** | `>=2.0.0` | Marcelo Trylesinski / *SysMo-Teams* | PyPI / `sse-starlette` | BSD-3-Clause |
-| **Three.js** | `r128` | Ricardo Cabello (`Mr.doob`) & *Comunidad WebGL* | GitHub / `mrdoob/three.js` | MIT |
-| **ReportLab** | `>=4.1.0` | Andy Robinson / *ReportLab Inc. (Londres, UK)* | PyPI / `reportlab.com` | BSD-Mod |
-| **NumPy & SciPy** | `>=1.26 / >=1.11` | Travis Oliphant & *NumFOCUS* | PyPI / `numpy.org`, `scipy.org` | BSD-3-Clause |
+| Prueba | Objeto Evaluado | Dimensión Real (Calibre) | Dimensión Reconstruida | Desviación | Error Relativo | Observaciones |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **Cilindro / Botella** | Plástico rígido simétrico | $70.00\text{ mm}$ | $70.16\text{ mm}$ | **$+0.16\text{ mm}$** | **$0.23\%$** | Reconstrucción métrica excelente. |
+| **Taza con Asa** | Cerámica asimétrica | $82.50\text{ mm}$ | $82.80\text{ mm}$ | **$+0.30\text{ mm}$** | **$0.36\%$** | Conserva proporciones del asa y cuerpo. |
+| **Mano en suspensión** | Miembro biológico sin apoyo | $\sim 180.00\text{ mm}$ | $6.60\text{ mm}$ | N/A | Invalidador | Los micro-movimientos involuntarios deforman la nube. **Obliga a usar apoyo rígido.** |
+
+> [!TIP]
+> **Aprendizaje clave:** La fotogrametría asume que el objeto permanece inmóvil respecto al entorno durante la toma. Por eso, cualquier miembro anatómico (brazo, pierna) debe estar firmemente apoyado sobre la plantilla de calibración durante los segundos de grabación.
 
 ---
 
-## 🚀 Instalación y Puesta en Marcha
+## 🚀 Guía Rápida de Instalación
 
-### 1. Clonar el Repositorio
+### 1. Clonar el repositorio
 ```bash
 git clone https://github.com/tu-usuario/reconstructor-3d-rgb.git
 cd reconstructor-3d-rgb
 ```
 
-### 2. Configurar Entorno Virtual (Python 3.10 o 3.11 recomendado)
+### 2. Crear y activar el entorno virtual (Python 3.10 o 3.11)
 En Windows (PowerShell):
 ```powershell
 python -m venv .venv
@@ -130,140 +101,79 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Instalar Dependencias
+### 3. Instalar las dependencias
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Configurar COLMAP (Structure from Motion)
-El sistema incluye detección automática de COLMAP en el sistema o en la carpeta `tools/colmap/`.
-* Si COLMAP no está instalado en el PATH global, `src/sfm_reconstruction.py` descargará y extraerá automáticamente la versión precompilada oficial para Windows en la primera ejecución.
-* También puedes descargar manualmente la versión oficial desde [COLMAP Releases](https://github.com/colmap/colmap/releases) y ubicarla en `tools/colmap/` o añadirla a tu variable de entorno `PATH`.
+### 4. Motor COLMAP
+El sistema detecta automáticamente COLMAP si está instalado en tu sistema (`PATH`) o en la carpeta local `tools/colmap/`. Si no lo encuentra en la primera ejecución en Windows, intentará descargarlo y configurarlo de forma asistida.
 
 ---
 
-## 📄 Generación del Patrón de Calibración A4
+## 📄 Preparación: Imprimir la Hoja de Calibración
 
-Antes de realizar cualquier escaneo, es imprescindible generar e imprimir la plantilla física de calibración:
+Antes del primer escaneo, necesitas la hoja guía con los marcadores que le dan escala métrica al sistema:
 
 ```powershell
 python run_cli.py --generate-markers --marker-size 50.0
 ```
 
-Los archivos se generarán en `data/printable_markers/`:
-* `target_apriltag_id0_50mm.pdf`: **Imprimir en hoja A4 a escala 100% real (sin ajustar a página ni distorsionar márgenes)**.
-* `target_apriltag_id0_50mm.png`: Versión en imagen de alta resolución.
+Esto creará en `data/printable_markers/`:
+* `target_apriltag_id0_50mm.pdf`: **Imprimir en hoja A4 a escala 100% real (sin "ajustar a página" en la impresora)**.
+* `target_apriltag_id0_50mm.png`: Imagen de respaldo en alta resolución.
 
 ---
 
-## 📹 Protocolo de Captura para Escaneo Óptimo
+## 📹 Consejos para una Buena Captura de Video
 
-Para asegurar reconstrucciones submilimétricas fiables:
+Para obtener la mejor calidad dimensional en tu modelo:
 
-1. **Fijación de la Plantilla:** Colocar la hoja A4 sobre una superficie horizontal plana y sujetar las esquinas con cinta adhesiva.
-2. **Apoyo Rígido Mandatorio:** Apoyar firmemente el objeto o la extremidad sobre la plantilla. **Queda prohibido escanear objetos o miembros suspendidos en el aire.**
-3. **Textura Visual Asistida:** En superficies lisas o reflectantes, asegurar marcas visuales o contraste para facilitar el emparejamiento SIFT.
-4. **Iluminación Difusa:** Iluminación ambiental uniforme. Evitar fuentes de luz directa que arrojen sombras dinámicas o brillos especulares durante el movimiento.
-5. **Órbita Circular de 360°:** Grabar durante **15 a 25 segundos** realizando una vuelta circular completa alrededor del objeto a una distancia constante de **40 a 60 cm**, manteniendo bloqueados el enfoque (**AF Lock**) y la exposición (**AE Lock**).
+1. **Plantilla firme:** Pega la hoja A4 a una mesa lisa con cinta en las esquinas.
+2. **Objeto apoyado:** Apoya el objeto o la extremidad con firmeza sobre la hoja.
+3. **Iluminación pareja:** Trabaja con luz difusa y homogénea; evita sombras duras o luces puntuales muy brillantes.
+4. **Enfoque bloqueado:** En la app de cámara de tu celular, mantén presionado sobre el objeto para activar el bloqueo de enfoque y exposición (**AE/AF Lock**).
+5. **Vuelta circular:** Camina o rota lentamente alrededor de la pieza completando 360° en unos **15 a 25 segundos**, a una distancia estable de unos 40 a 60 cm.
 
 ---
 
-## 💻 Modos de Uso
+## 🖥️ Cómo Utilizar el Sistema
 
-### Opción A: Interfaz Web Interactiva (Recomendado)
-Inicie el servidor web local con Three.js y telemetría en tiempo real:
+### Modo Visual e Interactivo (Recomendado)
+Levanta la aplicación web local:
 
 ```powershell
 python run_web.py
 ```
 
-Abra su navegador en: **`http://127.0.0.1:8000`**
-1. Arrastre el video grabado a la zona de carga.
-2. Ajuste los parámetros deseados (tamaño de marcador en mm, profundidad de Poisson, FPS).
-3. Presione **🚀 Iniciar Reconstrucción 3D**.
-4. Observe el progreso en tiempo real (0 a 100%) y el cronómetro de procesamiento.
-5. Inspeccione interactivamente la malla 3D con órbita, sombreado PBR, modo *Wireframe* y planos de corte *Slices*.
-6. Descargue el archivo **`.STL`** binario estanco y explore el **Historial de Proyectos**.
+Luego abre tu navegador en **`http://127.0.0.1:8000`**:
+* Arrastra el video que grabaste.
+* Presiona **Iniciar Reconstrucción 3D** y sigue la barra de progreso en vivo.
+* Explora la pieza en 3D (rotación, zoom, corte transversal, alambre) y descarga el archivo `.STL`.
 
-### Opción B: Línea de Comandos (CLI)
-Para flujos automáticos o integración en servidores:
+### Modo Terminal / Línea de Comandos (CLI)
+Ideal para procesar en lote o automatizar pruebas:
 
 ```powershell
-python run_cli.py --video data/input_videos/mi_escaneo.mp4 --marker-size 50.0 --output output/prueba_01
+python run_cli.py --video data/input_videos/mi_escaneo.mp4 --marker-size 50.0 --output output/escaneo_01
 ```
 
-Parámetros opcionales disponibles:
-* `--marker-size`: Dimensión del lado del marcador en mm (por defecto: `50.0`).
-* `--fps`: Tasa de extracción de cuadros por segundo (por defecto: `3.0`).
-* `--min-laplacian`: Umbral de varianza del filtro de nitidez (por defecto: `80.0`).
-* `--poisson-depth`: Profundidad del árbol octree de Poisson (por defecto: `9`).
-* `--slice-step`: Intervalo de corte vertical en mm (por defecto: `10.0`).
-
-### Opción C: Compilación de Documentación Técnica PDF
-Para compilar la documentación técnica editorial del proyecto personal:
-
-```powershell
-python scripts/generate_tech_doc_pdf.py
-```
+Opciones principales:
+* `--marker-size`: Tamaño del cuadrado exterior del marcador en mm (por defecto `50.0`).
+* `--fps`: Tasa de muestreo de cuadros (por defecto `3.0`).
+* `--poisson-depth`: Nivel de detalle de la malla (por defecto `9`).
+* `--slice-step`: Distancia entre cortes de análisis en mm (por defecto `10.0`).
+* `--neural`: Activa matching denso neuronal (DISK + LightGlue) para superficies biológicas o de bajo contraste.
+* `--texture`: Activa el pipeline de despliegue UV (`xatlas`) y horneado de texturas fotorrealistas (`.obj`, `.glb`).
+* `--atlas-res`: Resolución del atlas de texturas (`1024`, `2048`, `4096`).
 
 ---
 
-## 📁 Estructura del Repositorio
+## 🧩 Filosofía de Dependencias y Licencias
 
-```
-reconstructor-3d-rgb/
-├── .gitignore                                # Reglas de exclusión para Git
-├── requirements.txt                          # Dependencias oficiales de Python
-├── README.md                                 # Documentación general del repositorio
-├── run_web.py                                # Punto de entrada para el servidor web
-├── run_cli.py                                # Punto de entrada por línea de comandos
-│
-├── src/                                      # Núcleo del pipeline de procesamiento
-│   ├── config.py                             # Clases de configuración Pydantic
-│   ├── pipeline.py                           # Orquestador secuencial de 5 etapas
-│   ├── video_ingest.py                       # Extractor de cuadros nítidos y Laplaciano
-│   ├── marker_detector.py                    # Wrapper para Pupil-AprilTags
-│   ├── marker_generator.py                   # Generador vectorial de patrones A4
-│   ├── sfm_reconstruction.py                 # Wrapper de COLMAP SfM y Ceres BA
-│   ├── metric_scaler.py                      # Triangulación 3D y calibrador Multi-Tag
-│   ├── mesh_generator.py                     # Normales KNN, Poisson y recorte ROI
-│   └── mesh_analysis.py                      # Slicing ortogonal y cálculo de perímetros
-│
-├── web/                                      # Aplicación Web FastAPI y Frontend
-│   ├── server.py                             # API REST asíncrona y streaming SSE
-│   ├── templates/
-│   │   └── index.html                        # Dashboard HTML5 / Three.js WebGL
-│   └── static/
-│       ├── css/style.css                     # Estilos visuales corporativos
-│       └── js/three.min.js                   # Biblioteca Three.js local
-│
-├── scripts/                                  # Scripts de generación de documentación
-│   └── generate_tech_doc_pdf.py              # Compilador PDF de documentación técnica
-│
-├── tests/                                    # Batería de pruebas automatizadas
-│   ├── test_blur_filter.py                   # Pruebas del filtro de nitidez Laplaciana
-│   ├── test_marker_detector.py               # Pruebas de detección de esquinas AprilTag
-│   ├── test_mesh_slicing.py                  # Pruebas de rebanado de mallas y perímetros
-│   └── test_end_to_end_synthetic.py          # Prueba de integración extremo a extremo
-│
-├── data/                                     # Almacenamiento de patrones e inputs
-│   ├── printable_markers/                    # Patrones PDF y PNG imprimibles
-│   └── input_videos/                         # Carpeta para videos de entrada (.gitkeep)
-│
-├── tools/                                    # Herramientas binarias externas
-│   └── colmap/                               # Binarios de COLMAP para Windows (.gitkeep)
-│
-└── output/                                   # Modelos STL y reportes generados (.gitkeep)
-```
+Este proyecto respeta una regla estricta de licencias de software: **todos los componentes utilizados poseen licencias comerciales abiertas y permisivas** (MIT, Apache-2.0 o BSD). No se utilizan librerías con restricciones AGPL ni modelos con cláusulas de uso no comercial, facilitando su adopción y evolución en entornos médicos, académicos y profesionales.
 
 ---
 
-## 📜 Licencias y Consideraciones
-
-* **Código del Proyecto:** Distribuido bajo licencia permisiva de código abierto (MIT / BSD).
-* **Compatibilidad de Dependencias:** Todos los componentes integrados en el núcleo (OpenCV, Open3D, COLMAP, Pupil-AprilTags, FastAPI, Three.js) operan bajo licencias comerciales permisivas (BSD, MIT, Apache 2.0). Se prohíbe el enlace estático de dependencias con licencia restrictiva viral (como AGPL) o modelos con licencias no comerciales (CC BY-NC-SA).
-
----
-
-**Desarrollado como proyecto personal por Cristian Vargas · 2026**
+*Proyecto desarrollado con fines de investigación aplicada y democratización de tecnologías de digitalización física en 3D.*

@@ -175,7 +175,8 @@ class VideoIngestor:
             "frames": extracted_frames
         }
 
-        manifest_path = output_frames_dir / "manifest.json"
+        # Save manifest in parent directory so frames folder only contains valid images for COLMAP
+        manifest_path = output_frames_dir.parent / "frames_manifest.json"
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
 

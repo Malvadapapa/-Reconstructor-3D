@@ -31,3 +31,13 @@ reportlab>=4.1.0
 pyyaml>=6.0.1
 tqdm>=4.66.0
 requests>=2.31.0
+
+# Neural Matching & Dense Reconstruction (develop branch)
+torch>=2.0.0                    # BSD-3 — backend para LightGlue/DISK
+torchvision>=0.15.0             # BSD-3 — image transforms
+lightglue @ git+https://github.com/cvg/LightGlue.git  # Apache-2.0 — matcher neuronal + extractor DISK
+pycolmap>=0.6.0                 # BSD-3 — API Python de COLMAP (DB, mapper, MVS)
+
+# UV Texture Mapping
+xatlas>=0.0.9                   # MIT — UV unwrap paramétrico
+pyembree>=0.1.6                 # Apache-2.0 — raycasting acelerado (opcional, mejora trimesh)

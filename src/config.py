@@ -59,6 +59,25 @@ class SliceConfig:
 
 
 @dataclass
+class NeuralMatcherConfig:
+    """Settings for neural feature extraction and matching (LightGlue + DISK)."""
+    enabled: bool = False             # Set to True to use DISK + LightGlue instead of SIFT
+    device: str = "cpu"               # "cpu" (ideal without NVIDIA GPU), "cuda", or "auto"
+    filter_threshold: float = 0.1     # LightGlue confidence pruning threshold
+    min_inliers: int = 15             # Minimum inlier matches to register an image pair
+    max_frames_exhaustive: int = 150  # Up to 150 frames uses exhaustive all-to-all matching
+
+
+@dataclass
+class TextureConfig:
+    """Settings for UV parametrization and real multi-view texture baking."""
+    enabled: bool = False             # Set to True to perform UV unwrapping and texture baking
+    atlas_resolution: int = 4096      # Dimension of square texture atlas image (e.g. 2048 or 4096 px)
+    seam_blending: bool = True        # Smooth transition between adjacent UV charts
+    export_glb: bool = True           # Export interactive GLB format for Three.js viewer
+
+
+@dataclass
 class PipelineConfig:
     """Master configuration holding all sub-configs and paths."""
     video_path: Path = field(default_factory=lambda: Path("data/input_videos/test_bottle.mp4"))
@@ -69,6 +88,8 @@ class PipelineConfig:
     sfm: SfMConfig = field(default_factory=SfMConfig)
     mesh: MeshConfig = field(default_factory=MeshConfig)
     slice: SliceConfig = field(default_factory=SliceConfig)
+    neural: NeuralMatcherConfig = field(default_factory=NeuralMatcherConfig)
+    texture: TextureConfig = field(default_factory=TextureConfig)
 
     def ensure_dirs(self) -> None:
         """Create necessary output directories."""
@@ -76,4 +97,5 @@ class PipelineConfig:
         (self.output_dir / "frames").mkdir(exist_ok=True)
         (self.output_dir / "sfm").mkdir(exist_ok=True)
         (self.output_dir / "mesh").mkdir(exist_ok=True)
+        (self.output_dir / "texture").mkdir(exist_ok=True)
         (self.output_dir / "reports").mkdir(exist_ok=True)

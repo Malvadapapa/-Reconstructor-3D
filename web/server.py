@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
-from src.config import PipelineConfig, MarkerConfig, VideoIngestConfig, SfMConfig, MeshConfig, SliceConfig
+from src.config import PipelineConfig, MarkerConfig, VideoIngestConfig, SfMConfig, MeshConfig, SliceConfig, NeuralMatcherConfig, TextureConfig
 from src.pipeline import VideoTo3DPipeline
 from src.marker_generator import create_marker_pdf, create_marker_png
 
@@ -115,14 +115,20 @@ def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
                       {"frames": total_extracted})
 
         # ── STAGE 2: Structure from Motion ──
-        send_progress(session_id, 2, 10, "Extrayendo features SIFT de cada frame...")
-
         sfm_dir = config.output_dir / "sfm"
+        database_path = sfm_dir / "database.db"
 
-        def sfm_progress(pct, msg):
-            send_progress(session_id, 2, pct, msg)
-
-        sfm_result = pipeline.sfm.run_reconstruction(frames_dir, sfm_dir, progress_callback=sfm_progress)
+        if config.neural.enabled and pipeline.neural_matcher:
+            send_progress(session_id, 2, 10, "Extrayendo keypoints neuronales DISK...")
+            def neural_cb(pct, msg):
+                send_progress(session_id, 2, pct, msg)
+            pipeline.neural_matcher.run_neural_sfm_prep(frames_dir, database_path, progress_callback=neural_cb)
+            sfm_result = pipeline.sfm.run_mapper(frames_dir, sfm_dir, database_path, progress_callback=neural_cb)
+        else:
+            send_progress(session_id, 2, 10, "Extrayendo features SIFT de cada frame...")
+            def sfm_progress(pct, msg):
+                send_progress(session_id, 2, pct, msg)
+            sfm_result = pipeline.sfm.run_reconstruction(frames_dir, sfm_dir, progress_callback=sfm_progress)
 
         if sfm_result["num_registered_images"] < 3:
             raise RuntimeError(f"COLMAP solo registró {sfm_result['num_registered_images']} cámaras. Reconstrucción insuficiente.")
@@ -163,6 +169,28 @@ def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
                       f"✅ Mesh: {mesh_result.num_vertices} vértices, {mesh_result.num_triangles} triángulos",
                       {"vertices": mesh_result.num_vertices, "triangles": mesh_result.num_triangles})
 
+        # ── STAGE 4B: UV Parametrization & Texture Baking ──
+        textured_obj_path = None
+        textured_glb_path = None
+        texture_atlas_path = None
+
+        if config.texture.enabled and pipeline.texture_pipeline:
+            send_progress(session_id, 4, 80, "Desplegando coordenadas UV con xatlas y horneando texturas...")
+            def tex_cb(pct, msg):
+                send_progress(session_id, 4, 70 + int(pct * 0.28), msg)
+            texture_dir = config.output_dir / "texture"
+            baking_result = pipeline.texture_pipeline.bake_texture(
+                mesh_path=mesh_result.stl_path,
+                sfm_result=sfm_result,
+                frames_dir=frames_dir,
+                output_dir=texture_dir,
+                base_name=config.video_path.stem,
+                progress_callback=tex_cb
+            )
+            textured_obj_path = baking_result.obj_model_path
+            textured_glb_path = baking_result.glb_model_path
+            texture_atlas_path = baking_result.atlas_png_path
+
         # ── STAGE 5: Slicing & Measurements ──
         send_progress(session_id, 5, 20, "Cortando secciones transversales...")
 
@@ -189,6 +217,7 @@ def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
             "sparse_points_3d": sfm_result["num_points3d"],
             "scale_factor_applied": calibration.scale_factor,
             "calibration_error_mm": calibration.scale_error_mm,
+            "features_engine": "DISK + LightGlue" if config.neural.enabled else "SIFT",
             "mesh_dimensions_mm": {
                 "width_x": round(float(mesh_result.dimensions_mm[0]), 2),
                 "depth_y": round(float(mesh_result.dimensions_mm[1]), 2),
@@ -201,10 +230,18 @@ def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
                 "volume_cm3": mesh_result.volume_cm3,
             },
             "slices_extracted": analysis_report.num_slices,
+            "texture": {
+                "enabled": config.texture.enabled,
+                "atlas_path": str(texture_atlas_path) if texture_atlas_path else None,
+                "textured_obj": str(textured_obj_path) if textured_obj_path else None,
+                "textured_glb": str(textured_glb_path) if textured_glb_path else None,
+            },
             "paths": {
                 "stl_model": str(mesh_result.stl_path),
                 "obj_model": str(mesh_result.obj_path),
                 "ply_model": str(mesh_result.ply_path),
+                "textured_obj": str(textured_obj_path) if textured_obj_path else None,
+                "textured_glb": str(textured_glb_path) if textured_glb_path else None,
                 "measurements_json": str(report_json_path)
             }
         }
@@ -231,6 +268,9 @@ def run_pipeline_with_progress(session_id: str, config: PipelineConfig):
             "stl_model_path": str(mesh_result.stl_path),
             "obj_model_path": str(mesh_result.obj_path),
             "ply_model_path": str(mesh_result.ply_path),
+            "textured_glb_path": str(textured_glb_path) if textured_glb_path else None,
+            "textured_obj_path": str(textured_obj_path) if textured_obj_path else None,
+            "texture_atlas_path": str(texture_atlas_path) if texture_atlas_path else None,
             "measurements": measurements_dict,
             "summary_report": summary
         }
@@ -256,7 +296,10 @@ async def upload_video_endpoint(
     marker_size_mm: float = Form(50.0),
     target_fps: float = Form(4.0),
     min_laplacian_var: float = Form(30.0),
-    poisson_depth: int = Form(9)
+    poisson_depth: int = Form(9),
+    enable_neural: bool = Form(False),
+    enable_texture: bool = Form(True),
+    atlas_res: int = Form(2048)
 ):
     """Upload video and start processing in background thread."""
     try:
@@ -278,7 +321,9 @@ async def upload_video_endpoint(
             ingest=VideoIngestConfig(target_fps=target_fps, min_laplacian_var=min_laplacian_var),
             sfm=SfMConfig(),
             mesh=MeshConfig(poisson_depth=poisson_depth),
-            slice=SliceConfig(step_height_mm=10.0)
+            slice=SliceConfig(step_height_mm=10.0),
+            neural=NeuralMatcherConfig(enabled=enable_neural, device="cpu"),
+            texture=TextureConfig(enabled=enable_texture, atlas_resolution=atlas_res)
         )
 
         session_id = scan_id
@@ -404,6 +449,7 @@ async def get_project_details(scan_id: str):
     summary_file = proj_dir / "reports" / "pipeline_summary.json"
     measurements_file = proj_dir / "reports" / "measurements.json"
     stls = list(proj_dir.glob("**/*.stl"))
+    glbs = list(proj_dir.glob("**/*.glb"))
 
     summary_data = {}
     if summary_file.exists():
@@ -416,11 +462,13 @@ async def get_project_details(scan_id: str):
             measurements_data = json.load(f)
 
     stl_path = str(stls[0]) if stls else ""
+    glb_path = str(glbs[0]) if glbs else ""
 
     return JSONResponse(content={
         "success": True,
         "scan_id": scan_id,
         "stl_model_path": stl_path,
+        "textured_glb_path": glb_path if glb_path else None,
         "summary_report": summary_data,
         "measurements": measurements_data
     })
@@ -444,10 +492,34 @@ async def delete_project(scan_id: str):
 async def download_stl(path: str):
     """Serve reconstructed STL model by file path."""
     file_p = Path(path)
-    # Also support relative paths inside output/
     if not file_p.is_absolute():
         file_p = BASE_DIR / path
 
     if not file_p.exists():
         raise HTTPException(status_code=404, detail=f"Modelo STL no encontrado en: {path}")
     return FileResponse(str(file_p), media_type="model/stl", filename=file_p.name)
+
+
+@app.get("/api/download-glb")
+async def download_glb(path: str):
+    """Serve photorealistic textured GLB model for Three.js viewer and downloads."""
+    file_p = Path(path)
+    if not file_p.is_absolute():
+        file_p = BASE_DIR / path
+
+    if not file_p.exists():
+        raise HTTPException(status_code=404, detail=f"Modelo GLB no encontrado en: {path}")
+    return FileResponse(str(file_p), media_type="model/gltf-binary", filename=file_p.name)
+
+
+@app.get("/api/download-texture")
+async def download_texture(path: str):
+    """Serve baked texture atlas image."""
+    file_p = Path(path)
+    if not file_p.is_absolute():
+        file_p = BASE_DIR / path
+
+    if not file_p.exists():
+        raise HTTPException(status_code=404, detail=f"Textura no encontrada en: {path}")
+    return FileResponse(str(file_p), media_type="image/png", filename=file_p.name)
+

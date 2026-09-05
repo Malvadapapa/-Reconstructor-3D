@@ -212,7 +212,7 @@ class SfMReconstructor:
             res = subprocess.run(cmd_extract, capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"COLMAP feature extraction failed:\n{res.stderr or res.stdout}")
-        if progress_callback: progress_callback(35, "Features extraídos ✓ Emparejando imágenes...")
+        if progress_callback: progress_callback(35, "Features extraidos [OK] Emparejando imagenes...")
 
         # 2. Matcher (Sequential matcher is optimal for sequential video frames)
         if self.config.matcher_type == "exhaustive":
@@ -242,7 +242,20 @@ class SfMReconstructor:
             res = subprocess.run(cmd_match, capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"COLMAP matching failed:\n{res.stderr or res.stdout}")
-        if progress_callback: progress_callback(60, "Matching completado ✓ Construyendo mapa 3D...")
+        if progress_callback: progress_callback(60, "Matching completado [OK] Construyendo mapa 3D...")
+
+        return self.run_mapper(image_dir, output_sfm_dir, database_path, progress_callback)
+
+    def run_mapper(
+        self,
+        image_dir: Path,
+        output_sfm_dir: Path,
+        database_path: Path,
+        progress_callback=None
+    ) -> Dict:
+        """Run COLMAP mapper (Bundle Adjustment) on an already matched database."""
+        sparse_dir = output_sfm_dir / "sparse"
+        sparse_dir.mkdir(exist_ok=True)
 
         # 3. Mapper (Bundle Adjustment)
         cmd_map = [
@@ -261,7 +274,7 @@ class SfMReconstructor:
         res = subprocess.run(cmd_map, capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"COLMAP mapper failed:\n{res.stderr or res.stdout}")
-        if progress_callback: progress_callback(90, "Reconstrucción 3D completada ✓")
+        if progress_callback: progress_callback(90, "Reconstrucción 3D completada [OK]")
 
         # Check model index and pick the LARGEST submodel (most registered images)
         model_subdirs = [d for d in sparse_dir.iterdir() if d.is_dir()]
