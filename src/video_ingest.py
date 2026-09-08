@@ -73,12 +73,16 @@ class VideoIngestor:
             import shutil
             shutil.rmtree(legacy_annotated, ignore_errors=True)
 
-        # Keep annotated debug frames completely isolated outside of frames/
-        debug_dir = output_frames_dir.parent / "annotated_debug"
-        if debug_dir.exists():
-            for f in debug_dir.glob("*.jpg"):
-                f.unlink(missing_ok=True)
+        # Keep annotated debug frames completely isolated in debug/annotated/ outside of frames/
+        debug_dir = output_frames_dir.parent / "debug" / "annotated"
+        legacy_debug_dir = output_frames_dir.parent / "annotated_debug"
+        if legacy_debug_dir.exists():
+            import shutil
+            shutil.rmtree(legacy_debug_dir, ignore_errors=True)
+
         debug_dir.mkdir(parents=True, exist_ok=True)
+        for f in debug_dir.glob("*.jpg"):
+            f.unlink(missing_ok=True)
 
         if not video_path.exists():
             raise FileNotFoundError(f"Video file not found: {video_path}")
@@ -143,6 +147,7 @@ class VideoIngestor:
 
         # Save selected sharp keyframes and run marker detection
         extracted_frames: List[Dict] = []
+        prev_f_idx = None
         for saved_idx, (sharpness, frame, original_f_idx) in enumerate(selected_raw_frames):
             filename = f"frame_{saved_idx:04d}.jpg"
             file_path = output_frames_dir / filename
@@ -165,6 +170,13 @@ class VideoIngestor:
                 for d in detections
             ]
 
+            delta_frames = (original_f_idx - prev_f_idx) if prev_f_idx is not None else 0
+            delta_time_sec = round(float(delta_frames / fps), 3) if prev_f_idx is not None else 0.0
+            prev_f_idx = original_f_idx
+
+            win_start = int(saved_idx * window_size)
+            win_end = int(min(total_frames, (saved_idx + 1) * window_size))
+
             extracted_frames.append({
                 "frame_index": original_f_idx,
                 "saved_index": saved_idx,
@@ -172,11 +184,16 @@ class VideoIngestor:
                 "file_path": str(file_path),
                 "timestamp_sec": round(float(original_f_idx / fps), 3),
                 "sharpness_var": round(sharpness, 2),
+                "sharpness_laplacian_var": round(sharpness, 2),
+                "selection_reason": f"Sharpest frame in temporal window [{win_start}..{win_end}] (sharpness={sharpness:.1f})",
+                "delta_frames_from_prev": delta_frames,
+                "delta_time_sec_from_prev": delta_time_sec,
                 "marker_detected": has_any_marker,
                 "detections": det_dicts
             })
 
         print(f"[VideoIngest] Extracted {len(extracted_frames)} sharp keyframes uniformly across {duration_sec:.1f}s to: {output_frames_dir}")
+        print(f"[VideoIngest] Debug annotated frames saved to: {debug_dir}")
 
         manifest = {
             "video_file": str(video_path),
@@ -191,6 +208,14 @@ class VideoIngestor:
                 "target_fps": self.config.target_fps,
                 "min_laplacian_var": self.config.min_laplacian_var,
                 "max_frames": self.config.max_frames
+            },
+            "sampling_metadata": {
+                "total_original_frames": total_frames,
+                "total_selected_frames": len(extracted_frames),
+                "selected_frame_indices": [f["frame_index"] for f in extracted_frames],
+                "sampling_method": "uniform_window_max_laplacian",
+                "nominal_window_size_frames": round(window_size, 2),
+                "target_fps": self.config.target_fps
             },
             "total_extracted": len(extracted_frames),
             "frames": extracted_frames
