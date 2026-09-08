@@ -54,6 +54,9 @@ class NeuralMatcher(BaseMatcher):
             device_str = self.config.device
 
         self._device = torch.device(device_str)
+        if self._device.type == "cpu":
+            # Cap CPU threads to prevent OpenMP memory bloat during attention
+            torch.set_num_threads(min(4, max(1, torch.get_num_threads())))
         print(f"[NeuralMatcher] Initializing DISK (extractor) + LightGlue (matcher) on {self._device}...")
 
         # Initialize DISK (dense feature detector + descriptor)
@@ -125,6 +128,7 @@ class NeuralMatcher(BaseMatcher):
         with torch.inference_mode():
             matches_dict = self._matcher({"image0": t_feats0, "image1": t_feats1})
             matches = matches_dict["matches"][0].cpu().numpy()
+        del t_feats0, t_feats1, matches_dict
 
         return matches.astype(np.uint32)
 
@@ -393,6 +397,9 @@ class NeuralMatcher(BaseMatcher):
                 else:
                     matches = self.match_pair(features_cache[i], features_cache[j])
                     matches_cache[pair_key] = matches
+                    if (p_idx + 1) % 15 == 0:
+                        import gc
+                        gc.collect()
                     if (p_idx + 1) % 25 == 0 or (p_idx + 1) == num_pairs:
                         try:
                             with open(matches_cache_file, "wb") as f_m:
