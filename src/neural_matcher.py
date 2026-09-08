@@ -17,10 +17,12 @@ from typing import Callable, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from src.config import NeuralMatcherConfig
+from src.config import NeuralMatcherConfig, CameraConfig
+from src.matcher_interface import BaseMatcher, MatchingResult
+from src.sift_matcher import query_two_view_geometry_stats
 
 
-class NeuralMatcher:
+class NeuralMatcher(BaseMatcher):
     """
     Neural Feature Extraction and Matching engine using DISK + LightGlue.
     Optimized for biological textures, smooth surfaces, and monocular video orbits.
@@ -28,6 +30,11 @@ class NeuralMatcher:
 
     def __init__(self, config: NeuralMatcherConfig, colmap_bin: str = "colmap"):
         self.config = config
+        if colmap_bin == "colmap":
+            local_tools = Path("tools/colmap")
+            possible_exes = list(local_tools.glob("**/colmap.exe")) + list(local_tools.glob("**/COLMAP.bat"))
+            if possible_exes:
+                colmap_bin = str(possible_exes[0].resolve())
         self.colmap_bin = colmap_bin
         self._device = None
         self._extractor = None
@@ -155,6 +162,7 @@ class NeuralMatcher:
         self,
         image_dir: Path,
         database_path: Path,
+        camera_config: Optional[CameraConfig] = None,
         progress_callback: Optional[Callable[[int, str], None]] = None,
         allow_reuse: bool = True
     ) -> Dict:
@@ -165,9 +173,11 @@ class NeuralMatcher:
         3. Match image pairs with LightGlue (cached on disk).
         4. Write raw match list and execute COLMAP 'matches_importer' for TwoViewGeometry verification.
         """
+        from src.sfm_reconstruction import validate_sfm_image_inputs
+
         self._init_models()
-        image_dir = Path(image_dir)
-        database_path = Path(database_path)
+        image_dir = Path(image_dir).resolve()
+        database_path = Path(database_path).resolve()
         cache_dir = database_path.parent
         cache_dir.mkdir(parents=True, exist_ok=True)
         features_cache_file = cache_dir / "disk_features_cache.pkl"
@@ -185,19 +195,16 @@ class NeuralMatcher:
                     print(f"[NeuralMatcher] Reusing existing verified database with {verified_pairs} two-view geometries.")
                     if progress_callback: progress_callback(65, f"⚡ Base de datos SfM recuperada ({verified_pairs} pares geométricos verificados)...")
                     return {
-                        "num_images": len(list(image_dir.glob("*.*"))),
+                        "num_images": len(list(image_dir.glob("frame_*.jpg"))),
                         "num_pairs_matched": verified_pairs,
                         "database_path": database_path
                     }
             except Exception as e:
                 print(f"[NeuralMatcher] Notice: Existing database not complete ({e}), rebuilding.")
 
-        # Collect image files sorted
-        image_extensions = {".jpg", ".jpeg", ".png", ".bmp"}
-        image_files = sorted([
-            f for f in image_dir.iterdir()
-            if f.is_file() and f.suffix.lower() in image_extensions
-        ])
+        # Strict validation of input directory and explicit list generation
+        valid_image_names = validate_sfm_image_inputs(image_dir, cache_dir)
+        image_files = [image_dir / name for name in valid_image_names]
 
         if len(image_files) < 3:
             raise ValueError(f"[NeuralMatcher] Need at least 3 images, found {len(image_files)}")
@@ -269,14 +276,29 @@ class NeuralMatcher:
             );
         """)
 
-        # Insert Camera 1: SIMPLE_RADIAL (model_id 2) -> params: [f, cx, cy, k]
-        focal_prior = 1.2 * max(w, h)
-        cx, cy = w / 2.0, h / 2.0
-        k = 0.0
-        camera_params = np.array([focal_prior, cx, cy, k], dtype=np.float64)
+        # Camera configuration
+        model_name = camera_config.model if camera_config else "SIMPLE_RADIAL"
+        focal_prior = (camera_config.fx if camera_config and camera_config.fx is not None else 1.2 * max(w, h))
+        cx = (camera_config.cx if camera_config and camera_config.cx is not None else w / 2.0)
+        cy = (camera_config.cy if camera_config and camera_config.cy is not None else h / 2.0)
+
+        if model_name == "PINHOLE":
+            model_id = 1
+            fy = (camera_config.fy if camera_config and camera_config.fy is not None else focal_prior)
+            camera_params = np.array([focal_prior, fy, cx, cy], dtype=np.float64)
+        elif model_name == "RADIAL":
+            model_id = 3
+            k1 = camera_config.distortion_params[0] if (camera_config and camera_config.distortion_params) else 0.0
+            k2 = camera_config.distortion_params[1] if (camera_config and camera_config.distortion_params and len(camera_config.distortion_params) > 1) else 0.0
+            camera_params = np.array([focal_prior, cx, cy, k1, k2], dtype=np.float64)
+        else: # SIMPLE_RADIAL (model_id 2) -> params: [f, cx, cy, k]
+            model_id = 2
+            k1 = camera_config.distortion_params[0] if (camera_config and camera_config.distortion_params) else 0.0
+            camera_params = np.array([focal_prior, cx, cy, k1], dtype=np.float64)
+
         cur.execute(
             "INSERT INTO cameras (camera_id, model, width, height, params, prior_focal_length) VALUES (?, ?, ?, ?, ?, ?)",
-            (1, 2, w, h, camera_params.tobytes(), 1)
+            (1, model_id, w, h, camera_params.tobytes(), 1)
         )
 
         # 3. Load or Extract DISK features for all images
@@ -395,19 +417,55 @@ class NeuralMatcher:
         if progress_callback: progress_callback(60, "Verificando geometría epipolar 3D con COLMAP...")
         print("[NeuralMatcher] Importing matches and verifying two-view geometries...")
 
-        cmd_import = [
-            self.colmap_bin, "matches_importer",
-            "--database_path", str(database_path),
-            "--match_list_path", str(match_file_path),
-            "--match_type", "raw"
+        # Auto-detect if COLMAP binary has CUDA support
+        has_cuda = False
+        try:
+            help_res = subprocess.run([self.colmap_bin, "help"], capture_output=True, text=True)
+            has_cuda = "without CUDA" not in (help_res.stdout + help_res.stderr) and "CUDA" in (help_res.stdout + help_res.stderr)
+        except Exception:
+            has_cuda = False
+
+        use_gpu_flag = "1" if (getattr(self.device, "type", str(self.device)) == "cuda" and has_cuda) else "0"
+
+        # Batch pairs in chunks of 30 to ensure robust, safe import without buffer overrun on Windows
+        valid_items = [
+            (image_files[i].name, image_files[j].name, matches_cache[(image_files[i].name, image_files[j].name)])
+            for i, j in pairs
+            if (image_files[i].name, image_files[j].name) in matches_cache
+            and matches_cache[(image_files[i].name, image_files[j].name)].shape[0] >= self.config.min_inliers
         ]
 
-        res = subprocess.run(cmd_import, capture_output=True, text=True)
-        if match_file_path.exists():
-            match_file_path.unlink()
+        batch_size = 30
+        for b_idx in range(0, len(valid_items), batch_size):
+            batch = valid_items[b_idx:b_idx + batch_size]
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f_match:
+                batch_file_path = Path(f_match.name)
+                for name_i, name_j, matches in batch:
+                    f_match.write(f"{name_i} {name_j}\n")
+                    for m in matches:
+                        f_match.write(f"{m[0]} {m[1]}\n")
+                    f_match.write("\n")
 
-        if res.returncode != 0:
-            raise RuntimeError(f"COLMAP matches_importer failed:\n{res.stderr or res.stdout}")
+            cmd_import = [
+                self.colmap_bin, "matches_importer",
+                "--database_path", str(database_path),
+                "--match_list_path", str(batch_file_path),
+                "--match_type", "raw",
+                "--SiftMatching.use_gpu", use_gpu_flag
+            ]
+
+            res = subprocess.run(cmd_import, capture_output=True, text=True)
+            if batch_file_path.exists():
+                batch_file_path.unlink()
+
+            if res.returncode != 0 and use_gpu_flag == "1":
+                print(f"[NeuralMatcher] GPU import failed on batch {b_idx}, retrying on CPU...")
+                use_gpu_flag = "0"
+                cmd_import[cmd_import.index("--SiftMatching.use_gpu") + 1] = "0"
+                res = subprocess.run(cmd_import, capture_output=True, text=True)
+
+            if res.returncode != 0:
+                raise RuntimeError(f"COLMAP matches_importer failed on batch {b_idx}-{b_idx+len(batch)}:\n{res.stderr or res.stdout}")
 
         print("[NeuralMatcher] Neural matching & geometric verification completed successfully [OK]")
         if progress_callback: progress_callback(65, "Matching neuronal completado [OK] Construyendo mapa 3D...")
@@ -417,3 +475,36 @@ class NeuralMatcher:
             "num_pairs_matched": num_pairs,
             "database_path": database_path
         }
+
+    def extract_and_match(
+        self,
+        image_dir: Path,
+        database_path: Path,
+        camera_config: CameraConfig,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> MatchingResult:
+        """Standardized BaseMatcher entry point for DISK + LightGlue."""
+        prep_result = self.run_neural_sfm_prep(
+            image_dir=image_dir,
+            database_path=database_path,
+            camera_config=camera_config,
+            progress_callback=progress_callback
+        )
+        stats = query_two_view_geometry_stats(database_path)
+        return MatchingResult(
+            engine_name="DISK + LightGlue",
+            num_images=prep_result["num_images"],
+            total_pairs_processed=stats["total_pairs"],
+            valid_pairs=stats["valid_pairs"],
+            inliers_mean=stats["inliers_mean"],
+            inliers_median=stats["inliers_median"],
+            inliers_p10=stats["inliers_p10"],
+            inliers_p90=stats["inliers_p90"],
+            database_path=database_path,
+            metadata={"device": str(self.device), "filter_threshold": self.config.filter_threshold}
+        )
+
+
+# Alias for explicit naming
+DISKLightGlueMatcher = NeuralMatcher
+

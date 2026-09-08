@@ -14,7 +14,8 @@ from src.sfm_reconstruction import SfMReconstructor
 from src.metric_scaler import MetricScaler, MetricCalibrationResult
 from src.mesh_generator import MeshGenerator, MeshGenerationResult
 from src.mesh_analysis import MeshAnalyzer, MeshAnalysisReport
-from src.neural_matcher import NeuralMatcher
+from src.matcher import SIFTMatcher, DISKLightGlueMatcher, BaseMatcher
+from src.metrics_reporter import MetricsReporter
 from src.texture_pipeline import TexturePipeline, TextureBakingResult
 
 
@@ -48,7 +49,17 @@ class VideoTo3DPipeline:
         self.scaler = MetricScaler(config.marker)
         self.mesher = MeshGenerator(config.mesh)
         self.analyzer = MeshAnalyzer(config.slice)
-        self.neural_matcher = NeuralMatcher(config.neural, colmap_bin=self.sfm.colmap_bin) if config.neural.enabled else None
+
+        # Unified Matcher initialization (SIFT or DISK + LightGlue)
+        use_neural = (config.matcher.engine == "neural") or (getattr(config, 'neural', None) and config.neural.enabled)
+        if use_neural:
+            neural_cfg = config.neural
+            self.matcher: BaseMatcher = DISKLightGlueMatcher(neural_cfg, colmap_bin=self.sfm.colmap_bin)
+            self.neural_matcher = self.matcher  # backward compatibility
+        else:
+            self.matcher: BaseMatcher = SIFTMatcher(config.matcher, colmap_bin=self.sfm.colmap_bin)
+            self.neural_matcher = None
+
         self.texture_pipeline = TexturePipeline(config.texture) if config.texture.enabled else None
 
     def run(self) -> PipelineResult:
@@ -74,16 +85,23 @@ class VideoTo3DPipeline:
             raise ValueError(f"Demasiados pocos frames nítidos extraídos ({total_extracted}). Por favor grabe un video un poco más largo o con mejor iluminación.")
 
         # STAGE 2: Structure from Motion (COLMAP)
-        print("\n--- STAGE 2: Structure from Motion (SfM) ---")
+        print(f"\n--- STAGE 2: Feature Matching & Structure from Motion (SfM) ---")
         sfm_dir = self.config.output_dir / "sfm"
         database_path = sfm_dir / "database.db"
 
-        if self.config.neural.enabled and self.neural_matcher:
-            print("[Pipeline] Running Neural Feature Extraction (DISK) & Matching (LightGlue)...")
-            self.neural_matcher.run_neural_sfm_prep(frames_dir, database_path)
-            sfm_result = self.sfm.run_mapper(frames_dir, sfm_dir, database_path)
-        else:
-            sfm_result = self.sfm.run_reconstruction(frames_dir, sfm_dir)
+        matching_result = self.matcher.extract_and_match(
+            image_dir=frames_dir,
+            database_path=database_path,
+            camera_config=self.config.camera
+        )
+
+        sfm_result = self.sfm.run_mapper(
+            image_dir=frames_dir,
+            output_sfm_dir=sfm_dir,
+            database_path=database_path,
+            camera_config=self.config.camera
+        )
+        sfm_result["matching_result"] = matching_result
 
         if sfm_result["num_registered_images"] < 3:
             raise RuntimeError(f"COLMAP registered only {sfm_result['num_registered_images']} cameras. Reconstruction failed.")
@@ -137,49 +155,18 @@ class VideoTo3DPipeline:
 
         total_duration = time.time() - start_time
 
-        # Build final summary dictionary
-        summary = {
-            "pipeline_status": "SUCCESS",
-            "duration_seconds": round(total_duration, 2),
-            "video_frames": total_extracted,
-            "registered_cameras": sfm_result["num_registered_images"],
-            "sparse_points_3d": sfm_result["num_points3d"],
-            "scale_factor_applied": calibration.scale_factor,
-            "calibration_error_mm": calibration.scale_error_mm,
-            "features_engine": "DISK + LightGlue" if self.config.neural.enabled else "SIFT",
-            "mesh_dimensions_mm": {
-                "width_x": round(float(mesh_result.dimensions_mm[0]), 2),
-                "depth_y": round(float(mesh_result.dimensions_mm[1]), 2),
-                "height_z": round(float(mesh_result.dimensions_mm[2]), 2),
-            },
-            "mesh_stats": {
-                "num_vertices": mesh_result.num_vertices,
-                "num_triangles": mesh_result.num_triangles,
-                "is_watertight": mesh_result.is_watertight,
-                "volume_cm3": mesh_result.volume_cm3,
-            },
-            "slices_extracted": analysis_report.num_slices,
-            "texture": {
-                "enabled": self.config.texture.enabled,
-                "atlas_resolution": self.config.texture.atlas_resolution if self.config.texture.enabled else None,
-                "atlas_path": str(texture_atlas_path) if texture_atlas_path else None,
-                "textured_obj": str(textured_obj_path) if textured_obj_path else None,
-                "textured_glb": str(textured_glb_path) if textured_glb_path else None,
-            },
-            "paths": {
-                "stl_model": str(mesh_result.stl_path),
-                "obj_model": str(mesh_result.obj_path),
-                "ply_model": str(mesh_result.ply_path),
-                "textured_obj": str(textured_obj_path) if textured_obj_path else None,
-                "textured_glb": str(textured_glb_path) if textured_glb_path else None,
-                "measurements_json": str(report_json_path)
-            }
-        }
-
-        # Save summary report
-        summary_path = reports_dir / "pipeline_summary.json"
-        with open(summary_path, "w", encoding="utf-8") as f:
-            json.dump(summary, f, indent=2)
+        # Build final summary dictionary and persist reports
+        summary = MetricsReporter.generate_and_save_summary(
+            output_dir=self.config.output_dir,
+            manifest=manifest,
+            matching_stats=matching_result.__dict__ if hasattr(matching_result, '__dict__') else None,
+            sfm_result=sfm_result,
+            calibration=calibration,
+            mesh_result=mesh_result,
+            analysis_report=analysis_report,
+            pipeline_duration_sec=total_duration,
+            config=self.config
+        )
 
         print("\n" + "=" * 80)
         print("  PIPELINE COMPLETE - SUMMARY OF RESULTS")

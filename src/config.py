@@ -78,6 +78,36 @@ class TextureConfig:
 
 
 @dataclass
+class CameraConfig:
+    """Explicit camera intrinsic model and refinement settings for SfM."""
+    model: str = "SIMPLE_RADIAL"              # COLMAP camera model (e.g. SIMPLE_RADIAL, RADIAL, PINHOLE)
+    fx: Optional[float] = None                # Prior focal length X (if None, auto 1.2 * max(W, H))
+    fy: Optional[float] = None                # Prior focal length Y (if applicable)
+    cx: Optional[float] = None                # Principal point X (if None, W / 2.0)
+    cy: Optional[float] = None                # Principal point Y (if None, H / 2.0)
+    distortion_params: Optional[List[float]] = None # Prior distortion parameters (e.g. [k1] or [k1, k2])
+    single_camera: bool = True                # Share single camera for all video frames
+    refine_focal_length: bool = True          # Refine focal length during Bundle Adjustment
+    refine_principal_point: bool = False      # Refine principal point (default False in COLMAP)
+    refine_extra_params: bool = False         # Refine distortion params (Mapper.ba_refine_extra_params)
+
+
+@dataclass
+class MatcherConfig:
+    """Unified matching configuration decoupled from SfM reconstruction."""
+    engine: str = "sift"                      # "sift" or "neural" (DISK + LightGlue)
+    # SIFT options
+    sift_type: str = "sequential"             # "sequential" or "exhaustive"
+    max_features: int = 8192                  # Max SIFT features
+    use_gpu: bool = False                     # Enable GPU for SIFT if available
+    # Neural options (DISK + LightGlue)
+    device: str = "cpu"                       # "cpu", "cuda", or "auto"
+    filter_threshold: float = 0.1             # LightGlue confidence pruning threshold
+    min_inliers: int = 15                     # Minimum inliers required to keep a pair
+    max_frames_exhaustive: int = 15           # Up to 15 frames uses exhaustive; above uses sliding window + loop closure
+
+
+@dataclass
 class PipelineConfig:
     """Master configuration holding all sub-configs and paths."""
     video_path: Path = field(default_factory=lambda: Path("data/input_videos/test_bottle.mp4"))
@@ -85,6 +115,8 @@ class PipelineConfig:
     
     marker: MarkerConfig = field(default_factory=MarkerConfig)
     ingest: VideoIngestConfig = field(default_factory=VideoIngestConfig)
+    camera: CameraConfig = field(default_factory=CameraConfig)
+    matcher: MatcherConfig = field(default_factory=MatcherConfig)
     sfm: SfMConfig = field(default_factory=SfMConfig)
     mesh: MeshConfig = field(default_factory=MeshConfig)
     slice: SliceConfig = field(default_factory=SliceConfig)
@@ -92,10 +124,12 @@ class PipelineConfig:
     texture: TextureConfig = field(default_factory=TextureConfig)
 
     def ensure_dirs(self) -> None:
-        """Create necessary output directories."""
+        """Create necessary output directories, strictly isolating debug from frames."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         (self.output_dir / "frames").mkdir(exist_ok=True)
+        (self.output_dir / "debug" / "annotated").mkdir(parents=True, exist_ok=True)
         (self.output_dir / "sfm").mkdir(exist_ok=True)
         (self.output_dir / "mesh").mkdir(exist_ok=True)
         (self.output_dir / "texture").mkdir(exist_ok=True)
         (self.output_dir / "reports").mkdir(exist_ok=True)
+
