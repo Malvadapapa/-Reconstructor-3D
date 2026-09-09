@@ -238,17 +238,38 @@
   <!-- ═══════════════════════════════════════════════════════════════
        SECCIÓN INFERIOR: VISOR 3D A ANCHO COMPLETO (FULL-WIDTH)
        ═══════════════════════════════════════════════════════════════ -->
-  <div class="card viewer-card">
+  <div class="card viewer-card" id="viewerCard">
     <div id="viewport3d"></div>
+
+    <!-- Indicador Flotante de Modo Control -->
+    <div id="ctrlModeBadge" class="ctrl-mode-badge" style="display: none;">
+      <span>⌨️</span>
+      <span>Modo Control: <strong>Mantén clic izquierdo para mover</strong> | Rueda: Zoom</span>
+    </div>
 
     <div class="viewer-toolbar">
       <div class="toolbar-group">
-        <button class="btn btn-secondary" onclick="toggleWireframe()">🕸️ Wireframe</button>
-        <button class="btn btn-secondary" onclick="toggleSlices()">📏 Secciones (Slices)</button>
-        <button class="btn btn-secondary" onclick="toggleAutoRotate()">🔄 Auto-Giro</button>
-        <button class="btn btn-secondary" onclick="resetView()">🎯 Centrar</button>
+        <button class="btn btn-secondary" onclick="toggleWireframe()" title="Alternar malla alámbrica">🕸️ Wireframe</button>
+        <button class="btn btn-secondary" onclick="toggleSlices()" title="Mostrar/ocultar anillos de corte métrico">📏 Secciones</button>
+        <button class="btn btn-secondary" onclick="toggleAutoRotate()" title="Rotación continua automática">🔄 Auto-Giro</button>
+        <button class="btn btn-secondary" onclick="resetView()" title="Centrar modelo en el tablero (0,0,0) y reencuadrar cámara">🎯 Centrar</button>
         <button id="viewModeBtn" class="btn btn-secondary" onclick="toggleViewMode()" style="display: none; color: #38bdf8; font-weight: 700;">🎨 Textura / Sólido</button>
       </div>
+
+      <div class="toolbar-group">
+        <span style="font-size: 0.74rem; color: #94a3b8; font-weight: 600;">📐 Tablero:</span>
+        <select id="boardSizeSelect" class="toolbar-select" onchange="changeReferenceBoardSize(this.value)" title="Tamaño del tablero métrico calibrado">
+          <option value="1000" selected>1m × 1m (1000 mm)</option>
+          <option value="500">500 × 500 mm</option>
+          <option value="300">300 × 300 mm (Cama 3D)</option>
+          <option value="0">Desactivado</option>
+        </select>
+        <button class="btn btn-secondary toolbar-btn-compact" onclick="adjustModelZoom(-0.25)" title="Reducir zoom visual">➖</button>
+        <button class="btn btn-secondary toolbar-btn-compact" onclick="resetModelScale()" title="Restablecer a escala física 1:1 real" id="scaleLabelBtn">100%</button>
+        <button class="btn btn-secondary toolbar-btn-compact" onclick="adjustModelZoom(0.25)" title="Aumentar zoom visual">➕</button>
+        <button class="btn btn-secondary" id="fullscreenBtn" onclick="toggleFullscreen()" title="Alternar pantalla completa (Esc para salir)">⛶ Pantalla Completa</button>
+      </div>
+
       <div class="toolbar-group" id="downloadGroup" style="display: none;">
         <a id="downloadStlBtn" class="btn btn-secondary" style="color: #10b981; font-weight: 700;">
           💾 Descargar STL
@@ -260,8 +281,14 @@
     </div>
 
     <div class="viewer-info-overlay">
-      <span id="viewer-status">Visor 3D listo. Carga un video o selecciona un proyecto del historial.</span>
-      <span id="volumeBadge" class="badge-tag" style="display: none;">Volumen: -- cm³</span>
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <span id="viewer-status">Visor 3D listo. Carga un video o selecciona un proyecto del historial.</span>
+        <span id="boardMetricBadge" class="badge-tag" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">Tablero: 1.0 m × 1.0 m (1000 mm)</span>
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <span style="font-size: 0.72rem; color: #64748b; font-weight: 500;">Tip: Mantén <strong>Ctrl + Clic Izquierdo</strong> para mover</span>
+        <span id="volumeBadge" class="badge-tag" style="display: none;">Volumen: -- cm³</span>
+      </div>
     </div>
   </div>
 
@@ -359,6 +386,8 @@
   let currentMesh = null;
   let sliceGroup = null;
   let gridHelper = null;
+  let referenceBoardGroup = null;
+  let currentBoardSizeMm = 1000;
   let isWireframe = false;
   let showSlices = false;
   let autoRotate = false;
@@ -366,6 +395,8 @@
   let cachedStlUrl = null;
   let cachedGlbUrl = null;
   let cachedMeasurements = null;
+  let isCtrlPressed = false;
+  let currentZoomFactor = 1.0;
 
   const STAGE_NAMES = {
     1: "Etapa 1/5 · Extracción de Frames",
@@ -396,8 +427,8 @@
 
     // Camera
     const aspect = container.clientWidth / container.clientHeight;
-    camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 2000);
-    camera.position.set(0, -150, 100);
+    camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 3000);
+    camera.position.set(0, -350, 250);
     camera.up.set(0, 0, 1); // Z is UP in photogrammetry
 
     // Renderer
@@ -415,7 +446,7 @@
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.screenSpacePanning = true;
-    controls.maxDistance = 1000;
+    controls.maxDistance = 2500;
     controls.minDistance = 5;
 
     // Lights
@@ -423,20 +454,20 @@
     scene.add(ambientLight);
 
     const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.0);
-    dirLight1.position.set(100, -100, 200);
+    dirLight1.position.set(200, -200, 400);
     scene.add(dirLight1);
 
     const dirLight2 = new THREE.DirectionalLight(0x6366f1, 0.6);
-    dirLight2.position.set(-100, 100, -100);
+    dirLight2.position.set(-200, 200, -100);
     scene.add(dirLight2);
 
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x1e1b4b, 0.5);
     scene.add(hemiLight);
 
-    // Grid Floor (XY plane at Z=0)
-    gridHelper = new THREE.GridHelper(300, 30, 0x6366f1, 0x334155);
-    gridHelper.rotation.x = Math.PI / 2;
-    scene.add(gridHelper);
+    // ── Metric Reference Board Group (1m x 1m by default) ──
+    referenceBoardGroup = new THREE.Group();
+    scene.add(referenceBoardGroup);
+    buildMetricReferenceBoard(1000);
 
     // Slice group
     sliceGroup = new THREE.Group();
@@ -445,8 +476,247 @@
     // Resize listener
     window.addEventListener('resize', onWindowResize);
 
+    // ── Keyboard & Control Key Listeners for Move / Pan ──
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
+
     // Animation Loop
     animate();
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Control' || e.ctrlKey) {
+      if (!isCtrlPressed) {
+        isCtrlPressed = true;
+        if (controls) {
+          controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+        }
+        const vp = document.getElementById('viewport3d');
+        if (vp) vp.classList.add('ctrl-active');
+        const badge = document.getElementById('ctrlModeBadge');
+        if (badge) badge.style.display = 'flex';
+      }
+    }
+    if (e.key === 'Escape') {
+      const card = document.getElementById('viewerCard') || document.querySelector('.viewer-card');
+      if (card && (card.classList.contains('is-fullscreen') || document.fullscreenElement)) {
+        toggleFullscreen();
+      }
+    }
+  }
+
+  function handleKeyUp(e) {
+    if (e.key === 'Control' || !e.ctrlKey) {
+      isCtrlPressed = false;
+      if (controls) {
+        controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+      }
+      const vp = document.getElementById('viewport3d');
+      if (vp) vp.classList.remove('ctrl-active');
+      const badge = document.getElementById('ctrlModeBadge');
+      if (badge) badge.style.display = 'none';
+    }
+  }
+
+  function handleWindowBlur() {
+    isCtrlPressed = false;
+    if (controls) {
+      controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    }
+    const vp = document.getElementById('viewport3d');
+    if (vp) vp.classList.remove('ctrl-active');
+    const badge = document.getElementById('ctrlModeBadge');
+    if (badge) badge.style.display = 'none';
+  }
+
+  // ── Metric Reference Board (1m x 1m, 500mm, 300mm) ──
+  function buildMetricReferenceBoard(sizeMm = 1000) {
+    if (!referenceBoardGroup) return;
+
+    // Clear previous children
+    while (referenceBoardGroup.children.length > 0) {
+      const obj = referenceBoardGroup.children[0];
+      referenceBoardGroup.remove(obj);
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+      }
+    }
+
+    currentBoardSizeMm = parseFloat(sizeMm) || 0;
+    const bBadge = document.getElementById('boardMetricBadge');
+
+    if (currentBoardSizeMm <= 0) {
+      if (bBadge) bBadge.innerText = 'Tablero: Desactivado';
+      return;
+    }
+
+    // 1. Solid Ground Plate (dark precision cutting mat)
+    const plateGeo = new THREE.PlaneGeometry(currentBoardSizeMm, currentBoardSizeMm);
+    const plateMat = new THREE.MeshStandardMaterial({
+      color: 0x070b14,
+      roughness: 0.9,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false
+    });
+    const plateMesh = new THREE.Mesh(plateGeo, plateMat);
+    plateMesh.position.set(0, 0, -0.2);
+    plateMesh.receiveShadow = true;
+    referenceBoardGroup.add(plateMesh);
+
+    // 2. Minor Grid: 10 mm (1 cm) subdivisions
+    const minorDivs = Math.max(10, Math.round(currentBoardSizeMm / 10));
+    const minorGrid = new THREE.GridHelper(currentBoardSizeMm, minorDivs, 0x1e293b, 0x111827);
+    minorGrid.rotation.x = Math.PI / 2;
+    minorGrid.position.set(0, 0, -0.05);
+    referenceBoardGroup.add(minorGrid);
+
+    // 3. Major Grid: 100 mm (10 cm) divisions
+    const majorDivs = Math.max(2, Math.round(currentBoardSizeMm / 100));
+    const majorGrid = new THREE.GridHelper(currentBoardSizeMm, majorDivs, 0x6366f1, 0x24324d);
+    majorGrid.rotation.x = Math.PI / 2;
+    majorGrid.position.set(0, 0, 0);
+    referenceBoardGroup.add(majorGrid);
+
+    // 4. Perimeter Border (glowing cyan outline)
+    const half = currentBoardSizeMm / 2;
+    const borderPoints = [
+      new THREE.Vector3(-half, -half, 0.1),
+      new THREE.Vector3(half, -half, 0.1),
+      new THREE.Vector3(half, half, 0.1),
+      new THREE.Vector3(-half, half, 0.1),
+      new THREE.Vector3(-half, -half, 0.1)
+    ];
+    const borderGeo = new THREE.BufferGeometry().setFromPoints(borderPoints);
+    const borderMat = new THREE.LineBasicMaterial({
+      color: 0x38bdf8,
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.95
+    });
+    const borderLine = new THREE.Line(borderGeo, borderMat);
+    referenceBoardGroup.add(borderLine);
+
+    // 5. Center Origin Crosshair (0, 0, 0)
+    const crossSize = Math.min(35, currentBoardSizeMm * 0.05);
+    const crossPoints = [
+      new THREE.Vector3(-crossSize, 0, 0.2), new THREE.Vector3(crossSize, 0, 0.2),
+      new THREE.Vector3(0, -crossSize, 0.2), new THREE.Vector3(0, crossSize, 0.2)
+    ];
+    const crossGeo = new THREE.BufferGeometry().setFromPoints(crossPoints);
+    const crossMat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 2 });
+    const crossLines = new THREE.LineSegments(crossGeo, crossMat);
+    referenceBoardGroup.add(crossLines);
+
+    // 6. Corner Metric Marks
+    const tickLen = Math.min(25, currentBoardSizeMm * 0.035);
+    const cornerPoints = [
+      // Top-Left
+      new THREE.Vector3(-half, half - tickLen, 0.2), new THREE.Vector3(-half, half, 0.2),
+      new THREE.Vector3(-half, half, 0.2), new THREE.Vector3(-half + tickLen, half, 0.2),
+      // Top-Right
+      new THREE.Vector3(half - tickLen, half, 0.2), new THREE.Vector3(half, half, 0.2),
+      new THREE.Vector3(half, half, 0.2), new THREE.Vector3(half, half - tickLen, 0.2),
+      // Bottom-Right
+      new THREE.Vector3(half, -half + tickLen, 0.2), new THREE.Vector3(half, -half, 0.2),
+      new THREE.Vector3(half, -half, 0.2), new THREE.Vector3(half - tickLen, -half, 0.2),
+      // Bottom-Left
+      new THREE.Vector3(-half + tickLen, -half, 0.2), new THREE.Vector3(-half, -half, 0.2),
+      new THREE.Vector3(-half, -half, 0.2), new THREE.Vector3(-half, -half + tickLen, 0.2)
+    ];
+    const cornerGeo = new THREE.BufferGeometry().setFromPoints(cornerPoints);
+    const cornerMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
+    const cornerTicks = new THREE.LineSegments(cornerGeo, cornerMat);
+    referenceBoardGroup.add(cornerTicks);
+
+    // Update UI badge
+    if (bBadge) {
+      if (currentBoardSizeMm >= 1000) {
+        bBadge.innerText = `Tablero: ${(currentBoardSizeMm / 1000).toFixed(1)} m × ${(currentBoardSizeMm / 1000).toFixed(1)} m (${currentBoardSizeMm} mm)`;
+      } else {
+        bBadge.innerText = `Tablero: ${currentBoardSizeMm} × ${currentBoardSizeMm} mm`;
+      }
+    }
+  }
+
+  function changeReferenceBoardSize(val) {
+    const size = parseFloat(val);
+    buildMetricReferenceBoard(size);
+  }
+
+  // ── Fullscreen Toggle ──
+  function toggleFullscreen() {
+    const card = document.getElementById('viewerCard') || document.querySelector('.viewer-card');
+    const btn = document.getElementById('fullscreenBtn');
+    if (!card) return;
+
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || card.classList.contains('is-fullscreen'));
+
+    if (!isFs) {
+      if (card.requestFullscreen) {
+        card.requestFullscreen().catch(() => {
+          card.classList.add('is-fullscreen');
+          setTimeout(onWindowResize, 80);
+        });
+      } else if (card.webkitRequestFullscreen) {
+        card.webkitRequestFullscreen();
+      } else {
+        card.classList.add('is-fullscreen');
+        setTimeout(onWindowResize, 80);
+      }
+      if (btn) btn.innerHTML = '🗗 Salir Pantalla';
+    } else {
+      if (document.exitFullscreen && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {
+          card.classList.remove('is-fullscreen');
+          setTimeout(onWindowResize, 80);
+        });
+      } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
+        document.webkitExitFullscreen();
+      } else {
+        card.classList.remove('is-fullscreen');
+        setTimeout(onWindowResize, 80);
+      }
+      if (btn) btn.innerHTML = '⛶ Pantalla Completa';
+    }
+    setTimeout(onWindowResize, 100);
+  }
+
+  document.addEventListener('fullscreenchange', () => {
+    const card = document.getElementById('viewerCard') || document.querySelector('.viewer-card');
+    const btn = document.getElementById('fullscreenBtn');
+    if (!document.fullscreenElement) {
+      if (card) card.classList.remove('is-fullscreen');
+      if (btn) btn.innerHTML = '⛶ Pantalla Completa';
+    } else {
+      if (btn) btn.innerHTML = '🗗 Salir Pantalla';
+    }
+    setTimeout(onWindowResize, 60);
+  });
+
+  // ── Scale & Zoom Adjustment ──
+  function adjustModelZoom(delta) {
+    if (!camera || !controls) return;
+    const factor = (delta > 0) ? 0.82 : 1.22;
+    const offset = camera.position.clone().sub(controls.target);
+    offset.multiplyScalar(factor);
+    camera.position.copy(controls.target).add(offset);
+    controls.update();
+
+    currentZoomFactor = (currentZoomFactor * (1 / factor));
+    const btn = document.getElementById('scaleLabelBtn');
+    if (btn) btn.innerText = `${Math.round(currentZoomFactor * 100)}%`;
+  }
+
+  function resetModelScale() {
+    currentZoomFactor = 1.0;
+    const btn = document.getElementById('scaleLabelBtn');
+    if (btn) btn.innerText = '100%';
+    resetView();
   }
 
   function animate() {
@@ -468,9 +738,11 @@
   function onWindowResize() {
     const container = document.getElementById('viewport3d');
     if (!container || !camera || !renderer) return;
-    camera.aspect = container.clientWidth / container.clientHeight;
+    const w = container.clientWidth || window.innerWidth;
+    const h = container.clientHeight || window.innerHeight;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setSize(w, h);
   }
 
   function disposeCurrentMesh() {
@@ -706,14 +978,22 @@
   }
 
   function resetView() {
-    if (!currentMesh || !camera || !controls) return;
-    const bbox = new THREE.Box3().setFromObject(currentMesh);
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z, 50);
+    if (!camera || !controls) return;
+    let sizeZ = 50;
+    let maxDim = 150;
+    if (currentMesh) {
+      const bbox = new THREE.Box3().setFromObject(currentMesh);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      sizeZ = size.z;
+      maxDim = Math.max(size.x, size.y, size.z, 50);
+    }
     camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
-    controls.target.set(0, 0, size.z / 2);
+    controls.target.set(0, 0, sizeZ / 2);
     controls.update();
+    currentZoomFactor = 1.0;
+    const btn = document.getElementById('scaleLabelBtn');
+    if (btn) btn.innerText = '100%';
   }
 
   // ── Scroll to Projects History ──

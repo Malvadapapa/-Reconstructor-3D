@@ -5,7 +5,10 @@
 let scene, camera, renderer, controls;
 let currentMesh = null;
 let slicePlanesGroup = new THREE.Group();
-let gridHelper, axesHelper;
+let referenceBoardGroup = new THREE.Group();
+let axesHelper;
+let isCtrlPressed = false;
+let currentBoardSizeMm = 1000;
 
 function init3DViewer() {
   const container = document.getElementById('viewport3d');
@@ -21,7 +24,7 @@ function init3DViewer() {
 
   // Camera
   camera = new THREE.PerspectiveCamera(45, width / height, 1, 3000);
-  camera.position.set(200, 250, 300);
+  camera.position.set(250, 300, 350);
 
   // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -50,10 +53,9 @@ function init3DViewer() {
   dirLight2.position.set(-150, -100, -150);
   scene.add(dirLight2);
 
-  // Metric Floor Grid (10mm spacing, 300mm size)
-  gridHelper = new THREE.GridHelper(400, 40, 0x6366f1, 0x1f293d);
-  gridHelper.position.y = 0;
-  scene.add(gridHelper);
+  // Calibrated Metric Reference Board (1m x 1m / 1000 mm by default)
+  scene.add(referenceBoardGroup);
+  buildMetricReferenceBoard(1000);
 
   // Axes Helper (X: Red, Y: Green, Z: Blue)
   axesHelper = new THREE.AxesHelper(60);
@@ -64,16 +66,97 @@ function init3DViewer() {
   // Handle Resize
   window.addEventListener('resize', onWindowResize);
 
+  // Keyboard / Control Key Listeners for Panning
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Control' || e.ctrlKey) {
+      if (!isCtrlPressed) {
+        isCtrlPressed = true;
+        if (controls) controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+        container.classList.add('ctrl-active');
+        const badge = document.getElementById('ctrlModeBadge');
+        if (badge) badge.style.display = 'flex';
+      }
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Control' || !e.ctrlKey) {
+      isCtrlPressed = false;
+      if (controls) controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+      container.classList.remove('ctrl-active');
+      const badge = document.getElementById('ctrlModeBadge');
+      if (badge) badge.style.display = 'none';
+    }
+  });
+
   // Animation loop
   animate();
+}
+
+function buildMetricReferenceBoard(sizeMm = 1000) {
+  while (referenceBoardGroup.children.length > 0) {
+    const obj = referenceBoardGroup.children[0];
+    referenceBoardGroup.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+      else obj.material.dispose();
+    }
+  }
+
+  currentBoardSizeMm = parseFloat(sizeMm) || 0;
+  if (currentBoardSizeMm <= 0) return;
+
+  // Base cutting mat plate
+  const plateGeo = new THREE.PlaneGeometry(currentBoardSizeMm, currentBoardSizeMm);
+  const plateMat = new THREE.MeshStandardMaterial({
+    color: 0x070b14,
+    roughness: 0.9,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.8,
+    depthWrite: false
+  });
+  const plateMesh = new THREE.Mesh(plateGeo, plateMat);
+  plateMesh.rotation.x = -Math.PI / 2;
+  plateMesh.position.y = -0.2;
+  plateMesh.receiveShadow = true;
+  referenceBoardGroup.add(plateMesh);
+
+  // Minor Grid (10 mm)
+  const minorDivs = Math.max(10, Math.round(currentBoardSizeMm / 10));
+  const minorGrid = new THREE.GridHelper(currentBoardSizeMm, minorDivs, 0x1e293b, 0x111827);
+  minorGrid.position.y = -0.05;
+  referenceBoardGroup.add(minorGrid);
+
+  // Major Grid (100 mm)
+  const majorDivs = Math.max(2, Math.round(currentBoardSizeMm / 100));
+  const majorGrid = new THREE.GridHelper(currentBoardSizeMm, majorDivs, 0x6366f1, 0x24324d);
+  majorGrid.position.y = 0;
+  referenceBoardGroup.add(majorGrid);
+
+  // Perimeter Border
+  const half = currentBoardSizeMm / 2;
+  const borderPoints = [
+    new THREE.Vector3(-half, 0.1, -half),
+    new THREE.Vector3(half, 0.1, -half),
+    new THREE.Vector3(half, 0.1, half),
+    new THREE.Vector3(-half, 0.1, half),
+    new THREE.Vector3(-half, 0.1, -half)
+  ];
+  const borderGeo = new THREE.BufferGeometry().setFromPoints(borderPoints);
+  const borderMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2, transparent: true, opacity: 0.9 });
+  referenceBoardGroup.add(new THREE.Line(borderGeo, borderMat));
 }
 
 function onWindowResize() {
   const container = document.getElementById('viewport3d');
   if (!container || !renderer || !camera) return;
-  camera.aspect = container.clientWidth / container.clientHeight;
+  const w = container.clientWidth || window.innerWidth;
+  const h = container.clientHeight || window.innerHeight;
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setSize(w, h);
 }
 
 function animate() {
