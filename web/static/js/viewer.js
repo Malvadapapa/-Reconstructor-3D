@@ -17,10 +17,9 @@ function init3DViewer() {
   const width = container.clientWidth;
   const height = container.clientHeight;
 
-  // Scene
+  // Scene (dark CAD workspace, no fog)
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0e17);
-  scene.fog = new THREE.FogExp2(0x0a0e17, 0.0015);
 
   // Camera
   camera = new THREE.PerspectiveCamera(45, width / height, 1, 3000);
@@ -107,32 +106,24 @@ function buildMetricReferenceBoard(sizeMm = 1000) {
   currentBoardSizeMm = parseFloat(sizeMm) || 0;
   if (currentBoardSizeMm <= 0) return;
 
-  // Base cutting mat plate
-  const plateGeo = new THREE.PlaneGeometry(currentBoardSizeMm, currentBoardSizeMm);
-  const plateMat = new THREE.MeshStandardMaterial({
-    color: 0x070b14,
-    roughness: 0.9,
-    metalness: 0.1,
-    transparent: true,
-    opacity: 0.8,
-    depthWrite: false
-  });
-  const plateMesh = new THREE.Mesh(plateGeo, plateMat);
-  plateMesh.rotation.x = -Math.PI / 2;
-  plateMesh.position.y = -0.2;
-  plateMesh.receiveShadow = true;
-  referenceBoardGroup.add(plateMesh);
-
   // Minor Grid (10 mm)
   const minorDivs = Math.max(10, Math.round(currentBoardSizeMm / 10));
   const minorGrid = new THREE.GridHelper(currentBoardSizeMm, minorDivs, 0x1e293b, 0x111827);
   minorGrid.position.y = -0.05;
+  if (minorGrid.material) {
+    minorGrid.material.transparent = true;
+    minorGrid.material.opacity = 0.45;
+  }
   referenceBoardGroup.add(minorGrid);
 
   // Major Grid (100 mm)
   const majorDivs = Math.max(2, Math.round(currentBoardSizeMm / 100));
-  const majorGrid = new THREE.GridHelper(currentBoardSizeMm, majorDivs, 0x6366f1, 0x24324d);
+  const majorGrid = new THREE.GridHelper(currentBoardSizeMm, majorDivs, 0x6366f1, 0x334155);
   majorGrid.position.y = 0;
+  if (majorGrid.material) {
+    majorGrid.material.transparent = true;
+    majorGrid.material.opacity = 0.75;
+  }
   referenceBoardGroup.add(majorGrid);
 
   // Perimeter Border

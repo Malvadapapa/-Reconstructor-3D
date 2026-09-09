@@ -420,10 +420,9 @@
     const container = document.getElementById('viewport3d');
     if (!container) return;
 
-    // Scene
+    // Scene (pure dark CAD inspection canvas, no occluding fog)
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0c16);
-    scene.fog = new THREE.FogExp2(0x0a0c16, 0.002);
 
     // Camera
     const aspect = container.clientWidth / container.clientHeight;
@@ -553,33 +552,24 @@
       return;
     }
 
-    // 1. Solid Ground Plate (dark precision cutting mat)
-    const plateGeo = new THREE.PlaneGeometry(currentBoardSizeMm, currentBoardSizeMm);
-    const plateMat = new THREE.MeshStandardMaterial({
-      color: 0x070b14,
-      roughness: 0.9,
-      metalness: 0.1,
-      transparent: true,
-      opacity: 0.82,
-      depthWrite: false
-    });
-    const plateMesh = new THREE.Mesh(plateGeo, plateMat);
-    plateMesh.position.set(0, 0, -0.2);
-    plateMesh.receiveShadow = true;
-    referenceBoardGroup.add(plateMesh);
-
-    // 2. Minor Grid: 10 mm (1 cm) subdivisions
+    // 1. Minor Grid: 10 mm (1 cm) subdivisions (pure wireframe, no occluding solid plate)
     const minorDivs = Math.max(10, Math.round(currentBoardSizeMm / 10));
     const minorGrid = new THREE.GridHelper(currentBoardSizeMm, minorDivs, 0x1e293b, 0x111827);
     minorGrid.rotation.x = Math.PI / 2;
     minorGrid.position.set(0, 0, -0.05);
-    referenceBoardGroup.add(minorGrid);
-
-    // 3. Major Grid: 100 mm (10 cm) divisions
+    if (minorGrid.material) {
+      minorGrid.material.transparent = true;
+      minorGrid.material.opacity = 0.45;
+    }
+    // 2. Major Grid: 100 mm (10 cm) divisions
     const majorDivs = Math.max(2, Math.round(currentBoardSizeMm / 100));
-    const majorGrid = new THREE.GridHelper(currentBoardSizeMm, majorDivs, 0x6366f1, 0x24324d);
+    const majorGrid = new THREE.GridHelper(currentBoardSizeMm, majorDivs, 0x6366f1, 0x334155);
     majorGrid.rotation.x = Math.PI / 2;
     majorGrid.position.set(0, 0, 0);
+    if (majorGrid.material) {
+      majorGrid.material.transparent = true;
+      majorGrid.material.opacity = 0.75;
+    }
     referenceBoardGroup.add(majorGrid);
 
     // 4. Perimeter Border (glowing cyan outline)
