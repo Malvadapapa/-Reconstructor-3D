@@ -647,46 +647,43 @@
     const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement || card.classList.contains('is-fullscreen'));
 
     if (!isFs) {
+      card.classList.add('is-fullscreen');
+      if (btn) btn.innerHTML = '🗗 Salir Pantalla';
       if (card.requestFullscreen) {
-        card.requestFullscreen().catch(() => {
-          card.classList.add('is-fullscreen');
-          setTimeout(onWindowResize, 80);
-        });
+        card.requestFullscreen().catch(() => {});
       } else if (card.webkitRequestFullscreen) {
         card.webkitRequestFullscreen();
-      } else {
-        card.classList.add('is-fullscreen');
-        setTimeout(onWindowResize, 80);
       }
-      if (btn) btn.innerHTML = '🗗 Salir Pantalla';
     } else {
+      card.classList.remove('is-fullscreen');
+      if (btn) btn.innerHTML = '⛶ Pantalla Completa';
       if (document.exitFullscreen && document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {
-          card.classList.remove('is-fullscreen');
-          setTimeout(onWindowResize, 80);
-        });
+        document.exitFullscreen().catch(() => {});
       } else if (document.webkitExitFullscreen && document.webkitFullscreenElement) {
         document.webkitExitFullscreen();
-      } else {
-        card.classList.remove('is-fullscreen');
-        setTimeout(onWindowResize, 80);
       }
-      if (btn) btn.innerHTML = '⛶ Pantalla Completa';
     }
-    setTimeout(onWindowResize, 100);
+    setTimeout(onWindowResize, 50);
+    setTimeout(onWindowResize, 150);
   }
 
-  document.addEventListener('fullscreenchange', () => {
+  function handleFsChange() {
     const card = document.getElementById('viewerCard') || document.querySelector('.viewer-card');
     const btn = document.getElementById('fullscreenBtn');
-    if (!document.fullscreenElement) {
+    const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isFs) {
       if (card) card.classList.remove('is-fullscreen');
       if (btn) btn.innerHTML = '⛶ Pantalla Completa';
     } else {
+      if (card) card.classList.add('is-fullscreen');
       if (btn) btn.innerHTML = '🗗 Salir Pantalla';
     }
-    setTimeout(onWindowResize, 60);
-  });
+    setTimeout(onWindowResize, 50);
+    setTimeout(onWindowResize, 150);
+  }
+
+  document.addEventListener('fullscreenchange', handleFsChange);
+  document.addEventListener('webkitfullscreenchange', handleFsChange);
 
   // ── Scale & Zoom Adjustment ──
   function adjustModelZoom(delta) {
@@ -800,8 +797,9 @@
         buildSliceVisuals(cachedMeasurements);
 
         // Frame camera to object
+        // Frame camera comfortably to object
         const maxDim = Math.max(size.x, size.y, size.z, 50);
-        camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
+        camera.position.set(0, -maxDim * 2.1, maxDim * 1.35);
         controls.target.set(0, 0, size.z / 2);
         controls.update();
 
@@ -883,9 +881,9 @@
         // Build slice contours if measurements available
         buildSliceVisuals(cachedMeasurements);
 
-        // Frame camera to object
+        // Frame camera comfortably to object
         const maxDim = Math.max(size.x, size.y, size.z, 50);
-        camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
+        camera.position.set(0, -maxDim * 2.1, maxDim * 1.35);
         controls.target.set(0, 0, size.z / 2);
         controls.update();
 
@@ -978,7 +976,7 @@
       sizeZ = size.z;
       maxDim = Math.max(size.x, size.y, size.z, 50);
     }
-    camera.position.set(0, -maxDim * 1.8, maxDim * 1.2);
+    camera.position.set(0, -maxDim * 2.1, maxDim * 1.35);
     controls.target.set(0, 0, sizeZ / 2);
     controls.update();
     currentZoomFactor = 1.0;

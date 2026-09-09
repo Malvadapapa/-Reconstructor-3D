@@ -521,11 +521,16 @@ header {
   border: 1px solid var(--card-border);
   box-shadow: var(--shadow-main), var(--shadow-glow);
   margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  height: clamp(340px, 44vh, 460px);
 }
 
 #viewport3d {
   width: 100%;
-  height: clamp(380px, 48vh, 520px);
+  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   background: radial-gradient(circle at center, #1e293b 0%, #060913 100%);
   display: block;
   position: relative;
@@ -537,9 +542,7 @@ header {
   display: block;
 }
 
-
-.viewer-card:fullscreen,
-.viewer-card:-webkit-full-screen,
+/* Fullscreen Mode - Class based (Universal & 100% reliable) */
 .viewer-card.is-fullscreen {
   width: 100vw !important;
   height: 100vh !important;
@@ -557,12 +560,48 @@ header {
   z-index: 99999 !important;
 }
 
-.viewer-card:fullscreen #viewport3d,
-.viewer-card:-webkit-full-screen #viewport3d,
 .viewer-card.is-fullscreen #viewport3d {
   width: 100vw !important;
   height: 100vh !important;
   max-height: 100vh !important;
+  flex: 1 1 100% !important;
+}
+
+/* Native Fullscreen API rules kept strictly separated to avoid browser selector invalidation */
+.viewer-card:fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+.viewer-card:fullscreen #viewport3d {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  flex: 1 1 100% !important;
+}
+
+.viewer-card:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+.viewer-card:-webkit-full-screen #viewport3d {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  flex: 1 1 100% !important;
 }
 
 .ctrl-mode-badge {
