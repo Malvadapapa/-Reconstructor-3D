@@ -304,7 +304,10 @@ class SfMReconstructor:
             engine="sift",
             sift_type=self.config.matcher_type,
             max_features=self.config.max_features,
-            use_gpu=self.config.use_gpu
+            use_gpu=self.config.use_gpu,
+            num_threads=getattr(self.config, 'num_threads', 2),
+            max_image_size=getattr(self.config, 'max_image_size', 1920),
+            first_octave=getattr(self.config, 'first_octave', 0)
         )
         matcher = SIFTMatcher(matcher_cfg, colmap_bin=self.colmap_bin)
         cam_cfg = camera_config or CameraConfig(model=self.config.camera_model)
@@ -397,7 +400,8 @@ class SfMReconstructor:
                 "--Mapper.init_min_tri_angle", "4.0",
                 "--Mapper.ba_refine_focal_length", refine_focal,
                 "--Mapper.ba_refine_principal_point", refine_pp,
-                "--Mapper.ba_refine_extra_params", refine_extra
+                "--Mapper.ba_refine_extra_params", refine_extra,
+                "--Mapper.num_threads", str(getattr(self.config, 'num_threads', 2))
             ]
             print(f"[SfM] Running sparse mapping (BA refine: focal={refine_focal}, pp={refine_pp}, extra={refine_extra})...")
             if progress_callback: progress_callback(65, "Ejecutando Bundle Adjustment (mapper)...")

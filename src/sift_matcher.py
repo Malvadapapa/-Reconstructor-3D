@@ -84,8 +84,12 @@ class SIFTMatcher(BaseMatcher):
         valid_image_names = validate_sfm_image_inputs(image_dir, output_sfm_dir)
         image_list_path = output_sfm_dir / "image_list.txt"
 
-        if database_path.exists():
-            database_path.unlink()
+        for p in [database_path, database_path.with_name(database_path.name + "-shm"), database_path.with_name(database_path.name + "-wal")]:
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
 
         # Check CUDA support
         has_cuda = False
@@ -96,6 +100,9 @@ class SIFTMatcher(BaseMatcher):
             has_cuda = False
 
         use_gpu_flag = "1" if (self.config.use_gpu and has_cuda) else "0"
+        cpu_threads = str(getattr(self.config, 'num_threads', None) or 2)
+        max_img_sz = str(getattr(self.config, 'max_image_size', 1920))
+        first_oct = str(getattr(self.config, 'first_octave', 0))
 
         # 2. Feature Extractor
         cmd_extract = [
@@ -106,7 +113,10 @@ class SIFTMatcher(BaseMatcher):
             "--ImageReader.camera_model", camera_config.model,
             "--ImageReader.single_camera", "1" if camera_config.single_camera else "0",
             "--SiftExtraction.use_gpu", use_gpu_flag,
-            "--SiftExtraction.max_num_features", str(self.config.max_features)
+            "--SiftExtraction.max_num_features", str(self.config.max_features),
+            "--SiftExtraction.max_image_size", max_img_sz,
+            "--SiftExtraction.first_octave", first_oct if use_gpu_flag == "0" else "-1",
+            "--SiftExtraction.num_threads", cpu_threads if use_gpu_flag == "0" else "-1"
         ]
 
         if camera_config.fx is not None and camera_config.cx is not None and camera_config.cy is not None:
@@ -127,17 +137,21 @@ class SIFTMatcher(BaseMatcher):
             print("[SIFTMatcher] GPU extraction failed, retrying on CPU...")
             use_gpu_flag = "0"
             cmd_extract[cmd_extract.index("--SiftExtraction.use_gpu") + 1] = "0"
+            cmd_extract[cmd_extract.index("--SiftExtraction.first_octave") + 1] = first_oct
+            cmd_extract[cmd_extract.index("--SiftExtraction.num_threads") + 1] = cpu_threads
             res = subprocess.run(cmd_extract, capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"COLMAP feature extraction failed:\n{res.stderr or res.stdout}")
 
         # 3. Matcher
+        match_threads = cpu_threads if use_gpu_flag == "0" else "-1"
         if self.config.sift_type == "exhaustive":
             matcher_cmd = "exhaustive_matcher"
             cmd_match = [
                 self.colmap_bin, matcher_cmd,
                 "--database_path", str(database_path),
-                "--SiftMatching.use_gpu", use_gpu_flag
+                "--SiftMatching.use_gpu", use_gpu_flag,
+                "--SiftMatching.num_threads", match_threads
             ]
         else:
             matcher_cmd = "sequential_matcher"
@@ -145,6 +159,7 @@ class SIFTMatcher(BaseMatcher):
                 self.colmap_bin, matcher_cmd,
                 "--database_path", str(database_path),
                 "--SiftMatching.use_gpu", use_gpu_flag,
+                "--SiftMatching.num_threads", match_threads,
                 "--SequentialMatching.overlap", "10",
                 "--SequentialMatching.quadratic_overlap", "1"
             ]
@@ -156,6 +171,7 @@ class SIFTMatcher(BaseMatcher):
             print(f"[SIFTMatcher] GPU {matcher_cmd} failed, retrying on CPU...")
             use_gpu_flag = "0"
             cmd_match[cmd_match.index("--SiftMatching.use_gpu") + 1] = "0"
+            cmd_match[cmd_match.index("--SiftMatching.num_threads") + 1] = cpu_threads
             res = subprocess.run(cmd_match, capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"COLMAP matching failed:\n{res.stderr or res.stdout}")

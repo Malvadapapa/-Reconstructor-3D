@@ -44,5 +44,12 @@ class TestMatcherInterface(unittest.TestCase):
         self.assertEqual(res.inliers_mean, 120.5)
 
 
+    def test_matcher_config_safe_defaults(self):
+        cfg = MatcherConfig()
+        self.assertEqual(cfg.num_threads, 2)
+        self.assertEqual(cfg.max_image_size, 1920)
+        self.assertEqual(cfg.first_octave, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

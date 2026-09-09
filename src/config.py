@@ -34,6 +34,9 @@ class SfMConfig:
     max_features: int = 8192             # SIFT max features
     colmap_binary_path: Optional[str] = None # Path to colmap.exe, auto-detected if None
     use_gpu: bool = False                # Set to True if NVIDIA CUDA build is installed
+    num_threads: int = 2                 # CPU thread limit to prevent RAM exhaustion (0xC0000409)
+    max_image_size: int = 1920           # Max image dimension for feature extraction
+    first_octave: int = 0                # 0 = native resolution (avoids 4K upscaling RAM blowout)
 
 
 @dataclass
@@ -100,6 +103,9 @@ class MatcherConfig:
     sift_type: str = "sequential"             # "sequential" or "exhaustive"
     max_features: int = 8192                  # Max SIFT features
     use_gpu: bool = False                     # Enable GPU for SIFT if available
+    num_threads: int = 2                      # CPU thread limit to prevent RAM exhaustion (0xC0000409)
+    max_image_size: int = 1920                # Max image dimension for feature extraction
+    first_octave: int = 0                     # 0 = native resolution (avoids 4K upscaling RAM blowout)
     # Neural options (DISK + LightGlue)
     device: str = "cpu"                       # "cpu", "cuda", or "auto"
     filter_threshold: float = 0.1             # LightGlue confidence pruning threshold
